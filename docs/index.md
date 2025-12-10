@@ -1,3 +1,0 @@
-# C3S2-451: Operational extreme event monitoring and attribution service.
-
-This python library provides the tools to analyse and research extreme weather events, particularly focusing on their attribution to climate change, directly supporting the objectives and outputs of the C3S2-451 operational service. The library likely incorporates functionalities for the statistical analyses required by the Interactive Web Application, facilitates the rapid data processing needed for the Extreme Event Attribution Office and Rapid Attribution Studies, and aids in generating the Counter-Factual Weather Data using advanced dynamical models.

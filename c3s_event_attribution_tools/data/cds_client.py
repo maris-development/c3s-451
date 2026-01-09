@@ -8,6 +8,7 @@ import pandas as pd
 import xarray as xr
 import tempfile
 import zipfile
+from hashlib import sha256
 
 if __import__('sys').platform in ['linux']:
     import iris # type: ignore
@@ -94,14 +95,20 @@ class CDSClient():
         dataset = "reanalysis-era5-single-levels-monthly-means"
         
         req = self._build_request_monthly_averaged(variable, time_range, bbox)
-        # Create a temporary directory to store the downloaded file
-        with tempfile.TemporaryDirectory(delete=False) as temp_dir:
-            temp_file_path = os.path.join(temp_dir, "data.nc")
+        
+        request_hash = sha256(str(req).encode('utf-8')).hexdigest()
+        # Fetch the temporary directory of the OS
+        temp_dir = tempfile.gettempdir()
+        temp_file_path = os.path.join(temp_dir, f"cds_{request_hash}.nc")
+        
+        # Check if file already exists to avoid re-downloading
+        if not os.path.exists(temp_file_path):
             self.cds_client.retrieve(
-                dataset,
-                req
-            ).download(target=temp_file_path)
-            return temp_file_path
+                    dataset,
+                    req
+                ).download(target=temp_file_path)
+        
+        return temp_file_path
         
     def _fetch_data_monthly_averaged_xr(self, variable: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime]) -> xr.Dataset:
         """

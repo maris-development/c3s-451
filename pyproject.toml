@@ -7,9 +7,9 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "c3s_lib"
+name = "c3s-event-attribution-tools"
 version = "0.0.1"  # CI will replace this during nightly build
-description = "C3S 451 Library for Python"
+description = "C3S 451 Event attribution tools library for Python"
 readme = "README.md"
 requires-python = ">=3.7"
 license = "Apache-2.0"
@@ -46,14 +46,15 @@ dependencies = [
   "cartopy",
   "networkx",
   "scitools-iris; sys_platform == 'linux' or sys_platform == 'darwin'",
+  "ecmwf-api-client >= 1.6.1; sys_platform == 'linux' or sys_platform == 'darwin'"
 ]
 
 [tool.setuptools]
-packages = ["c3s_lib"]  # OR use find if you prefer
+packages = ["c3s_event_attribution_tools"]  # OR use find if you prefer
 include-package-data = true
 
 [tool.setuptools.package-data]
-c3s_lib = ["RobotoCondensed-Regular.ttf", "LogoLine_horizon_C3S.png"]
+c3s_event_attribution_tools = ["RobotoCondensed-Regular.ttf", "LogoLine_horizon_C3S.png"]
 
 [tool.cibuildwheel]
 # Build all CPython versions (skip PyPy, Python 3.6)

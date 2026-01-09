@@ -1,3 +1,4 @@
+from datetime import timedelta
 import requests
 import numpy as np
 from shapely.geometry import Polygon
@@ -11,7 +12,97 @@ from io import BytesIO
 from .plot import *
 
 class Utils:
-    """Utility class for various geospatial data operations, including region selection and data manipulation."""
+    """Utility class for various geospatial & temporal data operations, including region selection and data manipulation, splitting time ranges, etc."""
+
+
+
+    @staticmethod
+    def split_time_range_by_year_and_months(
+        start: datetime,
+        end: datetime,
+        months: list[str]|list[int]
+    ) -> list[tuple[datetime, datetime]]:
+        """
+        Split a time range into sub-ranges filtered by specific months.
+
+        This helper method iterates through the time period between start and end,
+        extracting intervals that fall within the requested months. Each resulting
+        tuple represents a continuous range within a single calendar month.
+
+        Parameters:
+            start (datetime):
+                The beginning of the overall time range.
+            end (datetime):
+                The end of the overall time range.
+            months (list[str] | list[int]):
+                A list of months to include, provided as integers (1-12) or 
+                strings.
+        
+        Returns:
+            list[tuple[datetime, datetime]]: A list of time ranges as tuples of 
+            (start_date, end_date) defining the periods within the specified months.
+        """
+        result = []
+
+        def last_day_of_month(dt: datetime) -> datetime:
+            next_month = dt.replace(day=28) + timedelta(days=4)  # always moves to the next month
+            return next_month.replace(day=1) - timedelta(days=1)    # always returns back to the current month
+        
+        current = datetime(start.year, start.month, start.day)
+
+        while current <= end:
+            if current.month in months:
+                month_start = current
+                month_end = last_day_of_month(current)
+
+                actual_start = max(month_start, start)
+                actual_end = min(month_end, end)
+
+                if actual_start <= actual_end:
+                    result.append((actual_start, actual_end))
+                
+            if current.month == 12:
+                current = datetime(current.year + 1, 1, 1)
+            else:
+                current = datetime(current.year, current.month + 1, 1)
+        
+        return result
+    
+    
+    @staticmethod
+    def split_time_range_by_year(
+        start: datetime,
+        end: datetime
+    ) -> list[tuple[datetime, datetime]]:
+        """
+        Split a time range into sub-ranges, each within a single calendar year.
+
+        This helper method takes a start and end datetime and breaks the interval
+        into a list of tuples, ensuring that no single range spans across
+        multiple years. This is useful for API requests that only allow
+        single-year queries.
+
+        Parameters:
+            start (datetime):
+                The beginning of the time range to be split.
+            end (datetime):
+                The end of the time range to be split.
+
+        Returns:
+            (list[tuple[datetime, datetime]]): A list of (start, end) tuples, 
+            where each tuple represents a period contained within one 
+            calendar year.
+        """
+        ranges = []
+        current_start = start
+        # iterate until within same year as end
+        while current_start.year < end.year:
+            year_end = datetime(year=current_start.year, month=12, day=31)
+            ranges.append((current_start, year_end))
+            current_start = datetime(year=current_start.year + 1, month=1, day=1)
+        ranges.append((current_start, end))
+        return ranges
+
 
     @staticmethod
     def select_region(regionType:str, bbox:tuple[float, float, float, float]|None=None,

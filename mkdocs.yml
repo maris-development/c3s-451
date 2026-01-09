@@ -1,11 +1,17 @@
-site_name: C3S2-451 Operational extreme event monitoring and attribution python library
+site_name: C3S2-451 Extreme Event Monitoring Python Library
 theme:
     name: material
     features:
-        - navigation.expand
+        # - navigation.expand
         - content.code.copy
         - content.code.annotate
-        - search.share
+        # - search.share
+        - navigation.tabs          # Horizontal top menu
+        - navigation.tabs.sticky   # Keep menu visible
+        - navigation.top           # "Back to top" button
+        - navigation.tracking      # Update URL as user scrolls
+        - toc.follow               # Highlight TOC as user scrolls
+        - content.tabs.link        # Sync code tabs (e.g., all tabs switch to 'Conda')
     palette:
         # Palette toggle for light mode
         - scheme: default
@@ -54,7 +60,7 @@ markdown_extensions:
     - pymdownx.snippets
 
 nav:
-    - Home: index.md
+    # - Home: index.md
     # - Installation: installation.md
     # - Getting Started: getting_started.md
     # - Using The Data Lake:
@@ -64,11 +70,19 @@ nav:
     #       - Datasets: using/datasets.md
     # - Examples:
     #       - World Ocean Database: examples/wod.md
-    - API Reference:
-        - Data functions: reference/data.md
+    - API Documentation:
+        - Home: index.md
+        - Data Retrieval functions: 
+            - DataClient: reference/data/data_client.md
+            - CDSClient: reference/data/cds_client.md
+            - MarsClient: reference/data/mars_client.md
+            - BeaconClient: reference/data/beacon_client.md
+            - CordexClient: reference/data/cordex_client.md
+            - Conversions: reference/data/conversions.md
+            - Variables: reference/data/variable.md
         - Plot functions: reference/plot.md
         - Process functions: reference/process.md
-        - Utility functions: reference/util.md
+        - Utility functions: reference/utils.md
     #       - Client: reference/client.md
     #       - Query: reference/query.md
     #       - Dataset: reference/dataset.md

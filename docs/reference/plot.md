@@ -1,3 +1,3 @@
 # Plot Reference
 
-::: c3s_lib.plot.Plot
+::: c3s_event_attribution_tools.plot.Plot

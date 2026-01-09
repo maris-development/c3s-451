@@ -1,3 +1,4 @@
+import os
 from cdsapi import Client
 from datetime import datetime, timedelta
 from .variable import Variable
@@ -93,13 +94,14 @@ class CDSClient():
         dataset = "reanalysis-era5-single-levels-monthly-means"
         
         req = self._build_request_monthly_averaged(variable, time_range, bbox)
-        with tempfile.NamedTemporaryFile(suffix='.nc', delete=False) as tmp:
+        # Create a temporary directory to store the downloaded file
+        with tempfile.TemporaryDirectory(delete=False) as temp_dir:
+            temp_file_path = os.path.join(temp_dir, "data.nc")
             self.cds_client.retrieve(
                 dataset,
                 req
-            ).download(target=tmp.name)
-            # open dataset
-            return tmp.name
+            ).download(target=temp_file_path)
+            return temp_file_path
         
     def _fetch_data_monthly_averaged_xr(self, variable: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime]) -> xr.Dataset:
         """

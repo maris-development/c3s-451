@@ -931,6 +931,8 @@ class DataClient():
                 return self.z500_geopotential_mean(bbox, time_range, **unit_kwargs)
             case 'slp': # 'mean_sea_level_pressure':
                 return self.mean_sea_level_pressure(bbox, time_range, **unit_kwargs)
+            case 'gmst':
+                return self.gmst(bbox, time_range, **unit_kwargs)
             case _:
                 return ValueError(f"Unsupported parameter: {parameter}")
 

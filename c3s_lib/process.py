@@ -379,7 +379,6 @@ class Process:
         return_gdf[datetime_col] = pd.to_datetime(f'{event_date.year}', format='%Y') + pd.to_timedelta(return_gdf['doy'] - 1, unit='D')
         #return_gdf["valid_time"] = pd.to_datetime(return_gdf["doy"], format="%j").dt.strftime("%m-%d")
 
-
         return return_gdf
 
 
@@ -405,11 +404,13 @@ class Process:
                 2D arrays return df with a new column 'value_col'+'_weighted'. xarray is returned as 'xarray.core.weighted.Weighted'
         '''
 
+        weights = np.cos(np.deg2rad(df[lat_col]))
+
         if isinstance(df, (xr.DataArray, xr.Dataset)):
             if lat_col not in df.coords:
                 raise ValueError(f"Latitude coordinate '{lat_col}' not found")
             
-            weights = np.cos(np.deg2rad(df[lat_col]))
+            # weights = np.cos(np.deg2rad(df[lat_col]))
 
             return df.weighted(weights)
         
@@ -419,12 +420,17 @@ class Process:
             if lat_col not in df.columns:
                 raise ValueError(f"Latitude coordinate '{lat_col}' not found")
 
-            out_col = f"{value_col}_weighted"
+
+            # weights = np.cos(np.deg2rad(df[lat_col]))
 
             df = df.copy()
-            weights = np.cos(np.deg2rad(df[lat_col]))
-            df[out_col] = df[value_col] * weights
-            df["_weight"] = weights
+
+            # # maybe remove this col from the output
+            # out_col = f"{value_col}_weighted"
+            # df[out_col] = df[value_col] * weights
+
+
+            df["_weights"] = weights
 
             return df
 
@@ -433,49 +439,49 @@ class Process:
             "xarray DataArray, or xarray Dataset"
             )
 
-    @staticmethod
-    def calculate_mean(gdf:gpd.GeoDataFrame, value_col:str, groupby_col:str) -> gpd.GeoDataFrame:
+    # @staticmethod
+    # def calculate_mean(gdf:gpd.GeoDataFrame, value_col:str, groupby_col:str) -> gpd.GeoDataFrame:
 
-        is_spatial = 'longitude' in groupby_col and 'latitude' in groupby_col and 'geometry' in groupby_col
-        crs = gdf.crs if is_spatial else None
+    #     is_spatial = 'longitude' in groupby_col and 'latitude' in groupby_col and 'geometry' in groupby_col
+    #     crs = gdf.crs if is_spatial else None
 
-        if '_weight' in gdf.columns:
-            gdf = (
-                gdf.groupby(groupby_col)
-                .apply(lambda x: x[f"{value_col}_weighted"].sum() / x["_weight"].sum())
-                # .reset_index()
-                .reset_index(name=value_col)
-            )
-        else:
-            gdf = gdf.groupby(groupby_col)[value_col].mean().reset_index()
+    #     if '_weights' in gdf.columns:
+    #         gdf = (
+    #             gdf.groupby(groupby_col)
+    #             .apply(lambda x: (x[value_col] * x["_weights"]).sum() / x["_weights"].sum())
+    #             # .reset_index()
+    #             .reset_index(name=value_col)
+    #         )
+    #     else:
+    #         gdf = gdf.groupby(groupby_col)[value_col].mean().reset_index()
 
-        if is_spatial:
-            gdf = gpd.GeoDataFrame(gdf,geometry=gpd.points_from_xy(gdf.longitude, gdf.latitude), crs=crs)
+    #     if is_spatial:
+    #         gdf = gpd.GeoDataFrame(gdf,geometry=gpd.points_from_xy(gdf.longitude, gdf.latitude), crs=crs)
 
-        return gdf
+    #     return gdf
     
     # J: So I don't know if this works anymore for spatial data. Had to change this because the old function (above) wasn't working for the trend analysis for some reason
     # J: or if the output is even similar to the original
+    # J: this does not work for xarray, only geopandas
     @staticmethod
-    def calculate_mean(gdf: gpd.GeoDataFrame, value_col: str, groupby_col: str) -> gpd.GeoDataFrame:
+    def calculate_mean(gdf: gpd.GeoDataFrame, value_col: str, groupby_col: str|list[str]) -> gpd.GeoDataFrame:
 
         # Check if GeoDataFrame
-        is_spatial = 'longitude' in groupby_col and 'latitude' in groupby_col and 'geometry' in groupby_col
-        crs = gdf.crs if is_spatial else None
+        # print("not yet mean!!", gdf)
 
-        if '_weight' in gdf.columns:
+        if '_weights' in gdf.columns:
             # Weighted mean
-            weighted_mean = gdf.groupby(groupby_col).apply(
-                lambda x: x[f"{value_col}_weighted"].sum() / x["_weight"].sum()
-            )
-
-            # Convert to DataFrame safely
-            gdf_result = weighted_mean.reset_index()  # now each column is 1D
-            gdf_result = gdf_result.rename(columns={0: value_col})
+            gdf_result = gdf.groupby(groupby_col).apply(
+                lambda x: (x[value_col] * x["_weights"]).sum() / x["_weights"].sum()
+            ).reset_index(name=value_col)
+            # .rename(value_col).reset_index()
 
         else:
             # Unweighted mean
             gdf_result = gdf.groupby(groupby_col)[value_col].mean().reset_index()
+
+        is_spatial = 'longitude' in groupby_col and 'latitude' in groupby_col and 'geometry' in groupby_col
+        crs = gdf.crs if is_spatial else None
 
         if is_spatial:
             # Recreate geometry if needed
@@ -561,13 +567,14 @@ class Process:
                             event_end: pd.Timestamp
     ):
         gdf_sub = Utils.subset_gdf(gdf=clim31d, study_region=studyregion, month_range=month_range)
+
         gdf_sub[datetime_col] = (
             pd.to_datetime(f"{event_end.year}", format="%Y")
             + pd.to_timedelta(gdf_sub["doy"] - 1, unit="D")
         )
         gdf_weighted = Process.weighted_values(gdf_sub, value_col)
         ts_clim31d_studyregion = Process.calculate_mean(gdf_weighted, value_col=value_col, groupby_col=datetime_col)
-        plot_df, labels, labelticks = Process.get_seasonal_cycle_plot_values(
+        plot_df, labels, labelticks = Utils.get_seasonal_cycle_plot_values(
             ts_clim31d_studyregion, datetime_col=datetime_col, month_range=month_range
         )
         return ts_clim31d_studyregion, plot_df, labels, labelticks

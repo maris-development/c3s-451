@@ -386,7 +386,7 @@ class Process:
     # apply a weight to each value based on latitude
     @staticmethod
     def weighted_values(df:gpd.GeoDataFrame|pd.DataFrame|xr.DataArray|xr.Dataset, value_col:str, lat_col:str='latitude'
-                        ) -> gpd.GeoDataFrame|pd.DataFrame|Any:
+                        ) -> gpd.GeoDataFrame|pd.DataFrame|xr.DataArray|xr.Dataset|Any:
         
         '''
         Calculates the weights for the values based on latitude
@@ -404,15 +404,16 @@ class Process:
                 2D arrays return df with a new column 'value_col'+'_weighted'. xarray is returned as 'xarray.core.weighted.Weighted'
         '''
 
-        weights = np.cos(np.deg2rad(df[lat_col]))
+        # weights = np.cos(np.deg2rad(df[lat_col]))
 
         if isinstance(df, (xr.DataArray, xr.Dataset)):
             if lat_col not in df.coords:
                 raise ValueError(f"Latitude coordinate '{lat_col}' not found")
             
-            # weights = np.cos(np.deg2rad(df[lat_col]))
+            weights = xr.DataArray(np.cos(np.deg2rad(df[lat_col])), dims=lat_col)
 
-            return df.weighted(weights)
+            return weights
+            # return df[value_col].weighted(weights)
         
         if isinstance(df, (gpd.GeoDataFrame)):
             if value_col not in df.columns:
@@ -421,7 +422,7 @@ class Process:
                 raise ValueError(f"Latitude coordinate '{lat_col}' not found")
 
 
-            # weights = np.cos(np.deg2rad(df[lat_col]))
+            weights = np.cos(np.deg2rad(df[lat_col]))
 
             df = df.copy()
 
@@ -464,34 +465,43 @@ class Process:
     # J: or if the output is even similar to the original
     # J: this does not work for xarray, only geopandas
     @staticmethod
-    def calculate_mean(gdf: gpd.GeoDataFrame, value_col: str, groupby_col: str|list[str]) -> gpd.GeoDataFrame:
+    def calculate_mean(df: gpd.GeoDataFrame|xr.DataArray|xr.Dataset, value_col: str, groupby_col: str|list[str]) -> gpd.GeoDataFrame:
 
         # Check if GeoDataFrame
-        # print("not yet mean!!", gdf)
 
-        if '_weights' in gdf.columns:
-            # Weighted mean
-            gdf_result = gdf.groupby(groupby_col).apply(
-                lambda x: (x[value_col] * x["_weights"]).sum() / x["_weights"].sum()
-            ).reset_index(name=value_col)
-            # .rename(value_col).reset_index()
+        if isinstance(df, (xr.DataArray, xr.Dataset, xr.computation.weighted.DataArrayWeighted)):
+            return (df.groupby(groupby_col).mean(dim=('latitude', 'logitude')))
 
-        else:
-            # Unweighted mean
-            gdf_result = gdf.groupby(groupby_col)[value_col].mean().reset_index()
+        if isinstance(df, (gpd.GeoDataFrame)):
+            if '_weights' in df.columns:
+                # Weighted mean
+                gdf_result = df.groupby(groupby_col).apply(
+                    lambda x: (x[value_col] * x["_weights"]).sum() / x["_weights"].sum()
+                ).reset_index(name=value_col)
+                # .rename(value_col).reset_index()
 
-        is_spatial = 'longitude' in groupby_col and 'latitude' in groupby_col and 'geometry' in groupby_col
-        crs = gdf.crs if is_spatial else None
+            else:
+                # Unweighted mean
+                gdf_result = df.groupby(groupby_col)[value_col].mean().reset_index()
 
-        if is_spatial:
-            # Recreate geometry if needed
-            gdf_result = gpd.GeoDataFrame(
-                gdf_result, 
-                geometry=gpd.points_from_xy(gdf_result.longitude, gdf_result.latitude), 
-                crs=crs
+            is_spatial = 'longitude' in groupby_col and 'latitude' in groupby_col and 'geometry' in groupby_col
+            crs = df.crs if is_spatial else None
+
+            if is_spatial:
+                # Recreate geometry if needed
+                gdf_result = gpd.GeoDataFrame(
+                    gdf_result, 
+                    geometry=gpd.points_from_xy(gdf_result.longitude, gdf_result.latitude), 
+                    crs=crs
+                )
+
+            return gdf_result
+        
+        #else
+        raise TypeError(
+            "weighted_values expects a GeoDataFrame, DataFrame, "
+            "xarray DataArray, or xarray Dataset"
             )
-
-        return gdf_result
 
 
     @staticmethod
@@ -550,7 +560,7 @@ class Process:
 
         match yearly_value:
             case 'mean':
-                return Process.calculate_mean(gdf=rolled_gdf, value_col=value_col, groupby_col='year'), rolled_gdf
+                return Process.calculate_mean(df=rolled_gdf, value_col=value_col, groupby_col='year'), rolled_gdf
             case 'max':
                 return Process.calculate_max(gdf=rolled_gdf, value_col=value_col, datetime_col=new_datetime_col, groupby_col='year'), rolled_gdf
             case 'min':

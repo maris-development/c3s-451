@@ -8,6 +8,7 @@ import rasterio
 from shapely.geometry import Polygon, shape
 import xarray as xr
 from shapely import contains_xy
+from scipy.stats import chi2
 
 
 class Process:
@@ -263,16 +264,40 @@ class Process:
         group_by: list[str] = None,
         min_periods: int|None = 1,
         remove_leap_days: bool = False,
+        ci: float = 0
     ):
-        """
+        '''
         Compute rolling statistics (sum, mean, std, quantile) over a fixed-size window.
         Assumes datetime_col is already at the desired temporal resolution (days, months, or years).
 
-        Returns
-        -------
-        DataFrame or GeoDataFrame
-            Same as input, with rolled values in `value_col`.
-        """
+        Parameters:
+            gdf (pd.DataFrame|gpd.GeoDataFrame):
+                DataFrame or GeoDataFrame
+            value_col (str):
+                Name of the column to roll
+            windown (int):
+                Size of the rolling window
+            centering (bool):
+                If True, window is centered on each point
+            datetime_col (str):
+                Name of the datetime column
+            method (Literal["sum", "mean", "std", "quantile", "dispersion"]): 
+            quantile (float):
+                For quantile method
+            group_by (list[str]|None):
+                Columns to group by before rolling, if None rolls globally
+            min_periods (int|None):
+                Minimum number of observations in window required to have a value
+            remove_leap_days (bool):
+                If True, removes Feb 29 from the data before rolling
+            ci (float):
+                Confidence interval (0-1) for std and dispersion methods, set > 0 to calculate recommended 0.95
+
+        Returns:
+            gdf (pd.DataFrame|gpd.GeoDataFrame):
+                Same as input, with rolled values in `value_col`.
+        
+        '''
 
         if window <= 1:
             return gdf
@@ -308,6 +333,28 @@ class Process:
                     raise ValueError(f"Unsupported method: {method}")
 
             group[value_col] = rolled
+
+            if ci > 0 and method in ("std", "dispersion"):
+                n = roller.count().reset_index(drop=True)
+                alpha = 1 - ci
+                var = roller.var().reset_index(drop=True)
+
+                chi2_lower = chi2.ppf(1 - alpha / 2, n - 1)
+                chi2_upper = chi2.ppf(alpha / 2, n - 1)
+                std_lower = np.sqrt((n - 1) * var / chi2_lower)
+                std_upper = np.sqrt((n - 1) * var / chi2_upper)
+
+                if method == "std":
+                    group[f"{value_col}_ci_lower"] = std_lower
+                    group[f"{value_col}_ci_upper"] = std_upper
+
+                elif method == "dispersion":
+                    mean_vals = roller.mean().reset_index(drop=True)
+                    mean_vals = mean_vals.replace(0, np.nan)
+                    group[f"{value_col}_ci_lower"] = std_lower / mean_vals
+                    group[f"{value_col}_ci_upper"] = std_upper / mean_vals
+
+
             return group
 
         if group_by:
@@ -738,3 +785,90 @@ class Process:
             da_yearly_series[name] = da_year
 
         return da_yearly_series
+
+    def fill_missing_gmst_with_climatology(
+        gmst_monthly: pd.DataFrame,
+        climatology: pd.DataFrame,
+        gmst_value_col: str = "t2m",
+        climatology_value_col: str = "t2m",
+        time_col: str = "valid_time"
+    ) -> pd.DataFrame:
+        '''
+        Fill missing GMST monthly values using climatology + anomaly.
+
+        This function:
+        1. Ensures the datetime format.
+        2. Sorts the GMST dataset by time.
+        3. Builds a complete monthly date range up to the last available year December.
+        4. Reindexes GMST onto this range.
+        5. Fills any missing months using:
+             GMST_missing = clim_missing_month + anomaly
+
+        Parameters:
+            gmst_monthly (pd.DataFrame):
+                GMST dataset with columns for timestamp and temperature.
+            climatology (pd.DataFrame):
+                Monthly climatology dataset with same time/value columns.
+            time_col (str):
+                Name of the datetime column (default = "valid_time"). Optional.
+            gmst_value_col (str):
+                Name of the value column in the GMST dataset (default = "t2m").
+            climatology_value_col (str):
+                Name of the temperature column (default = "t2m"). Optional.
+
+        Returns:
+            pd.DataFrame
+                A DataFrame with a full monthly GMST time series and missing values filled.
+        '''
+
+        # --- Ensure datetime ---
+        gmst_monthly[time_col] = pd.to_datetime(gmst_monthly[time_col])
+        climatology[time_col] = pd.to_datetime(climatology[time_col])
+
+        # --- Sort GMST chronologically ---
+        gmst_monthly = (
+            gmst_monthly
+            .sort_values(time_col)
+            .reset_index(drop=True)
+        )
+
+        # --- Build complete monthly date range ---
+        last_year = gmst_monthly[time_col].dt.year.max()
+        full_range = pd.date_range(
+            start=gmst_monthly[time_col].min(),
+            end=pd.Timestamp(year=last_year, month=12, day=1),
+            freq="MS"
+        )
+
+        # --- Reindex onto full range ---
+        gmst_complete = (
+            gmst_monthly
+            .set_index(time_col)
+            .reindex(full_range)
+        )
+        gmst_complete.index.name = time_col
+
+        # --- Fill missing values using clim + anomaly ---
+        missing_indices = gmst_complete[gmst_complete[gmst_value_col].isna()].index
+
+        for idx in missing_indices:
+            # previous available GMST
+            prev_idx = gmst_complete.index[gmst_complete.index < idx][-1]
+            last_gmst = gmst_complete.loc[prev_idx, gmst_value_col]
+
+            # climatology values
+            prev_clim = climatology.loc[
+                climatology[time_col].dt.month == prev_idx.month, climatology_value_col
+            ].iloc[0]
+
+            missing_clim = climatology.loc[
+                climatology[time_col].dt.month == idx.month, climatology_value_col
+            ].iloc[0]
+
+            # anomaly
+            anomaly = last_gmst - prev_clim
+
+            # fill missing value
+            gmst_complete.loc[idx, gmst_value_col] = missing_clim + anomaly
+
+        return gmst_complete.reset_index().rename(columns={"index": time_col})

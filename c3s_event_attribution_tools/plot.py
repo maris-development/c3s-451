@@ -950,7 +950,7 @@ class Plot:
     def plot_timeserie(data, value_col:str, title:str, x_label:str, y_label:str, datetime_col:str='valid_time', 
                     fig_size:tuple=(12,6), dpi:int=100, show_grid:bool=True, line_style:str=':', marker_style:str=None, 
                     draw_style:str='default', label_rotation:int=0, line_width:float=1.5, labelticks:list[str]=None, labels:list[str]=None,
-                    add_logos:bool=True, center_month_labels:bool=False, full_month_names:bool=False, ax=None):
+                    add_logos:bool=True, center_month_labels:bool=False, full_month_names:bool=False, ax=None, ci:bool = False):
         """Plots a time series from a DataFrame column.
 
         The function sets up a Matplotlib figure/axis and plots the specified value column
@@ -986,6 +986,8 @@ class Plot:
                 `center_month_labels` is True. Defaults to False.
             ax (matplotlib.axes.Axes, optional): An existing Matplotlib Axes object to plot onto.
                 Defaults to None.
+            ci (bool):
+                Plot confidence interval shading if True. Expects columns {value_col}_ci_lower and {value_col}_ci_upper
 
         Returns:
             tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, matplotlib.axes.Axes | None]:
@@ -1039,6 +1041,16 @@ class Plot:
                 linestyle=line_style, 
                 drawstyle=draw_style,
                 **(marker_style if marker_style is not None else {})
+                )
+        
+        if ci:
+            ax.fill_between(
+                    data[datetime_col],
+                    data[f"{value_col}_ci_lower"],
+                    data[f"{value_col}_ci_upper"],
+                    color='lightblue',  # or customize per variable
+                    alpha=0.3,
+                    label="(95% CI)"
                 )
 
         ax.set_title(label=title)

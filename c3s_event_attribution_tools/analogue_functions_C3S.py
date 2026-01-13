@@ -968,6 +968,42 @@ class Analogues:
         iris.coord_categorisation.add_month(cube, 'time')
         cube = cube.extract(iris.Constraint(month=months))
         return cube
+    
+    @staticmethod
+    def nc_to_cube(path:str) -> iris.cube.Cube:
+        '''
+        Load in NetCDF file to iris cube
+
+        Parameters:
+            path (str): Relative file location
+
+        Returns:
+            iris.cube.Cube: Loaded iris cube from NetCDF
+        '''
+
+        cubes = iris.load(path)
+        try:
+            cube = cubes[0]
+        except:
+            print("Error reading cubes for %s", path)
+            raise FileNotFoundError
+        return cube
+    
+    def extract_months(cube:iris.cube.Cube, months:list[str]) -> iris.cube.Cube:
+        '''
+        Extract months from cube
+
+        Parameters:
+            cube (iris.cube.Cube): Iris cube
+            months (list[str]): Three month abbreviations [previous, current, next] e.g. ['Feb', 'Mar', 'Apr']
+
+        Returns:
+            iris.cube.Cube: Extracted iris cube for selected months
+        '''
+
+        iris.coord_categorisation.add_month(cube, 'time')
+        cube = cube.extract(iris.Constraint(month=months))
+        return cube
 
     @staticmethod
     def reanalysis_data_single_date_v2(var:str, date:list) -> iris.cube.Cube:

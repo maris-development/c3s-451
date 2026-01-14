@@ -618,10 +618,10 @@ class Process:
     @staticmethod
     def calculate_seasonal_cycle(clim31d: gpd.GeoDataFrame,
                             studyregion: gpd.GeoDataFrame | dict,
-                            month_range: tuple[int, int],
                             value_col: str,
                             datetime_col: str,
-                            event_end: pd.Timestamp
+                            event_end: pd.Timestamp,
+                            month_range: tuple[int, int]=(1,12),
     ):
         gdf_sub = Utils.subset_gdf(gdf=clim31d, study_region=studyregion, month_range=month_range)
 

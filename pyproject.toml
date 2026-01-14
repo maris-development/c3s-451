@@ -46,7 +46,9 @@ dependencies = [
   "cartopy",
   "networkx",
   "scitools-iris; sys_platform == 'linux' or sys_platform == 'darwin'",
-  "ecmwf-api-client >= 1.6.1; sys_platform == 'linux' or sys_platform == 'darwin'"
+  "ecmwf-api-client >= 1.6.1; sys_platform == 'linux' or sys_platform == 'darwin'",
+  "scipy",
+  "rpy2"
 ]
 
 [tool.setuptools]

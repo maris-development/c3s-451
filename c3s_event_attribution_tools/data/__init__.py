@@ -418,6 +418,25 @@ class DataClient():
             spatial and temporal information.
         """
         return self.cds_client.fetch_data_single_levels_gpd("derived-era5-single-levels-daily-statistics", Variable.mslp, bbox, time_range)
+    
+    def mean_sea_level_pressure_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime]) -> xr.Dataset:
+        """
+        Fetch mean sea level pressure data for a specified bounding box and time range.
+
+        This method retrieves daily mean sea level pressure statistics from the ERA5
+        single levels daily statistics dataset via the CDS client.
+
+        Parameters:
+            bbox (tuple[float, float, float, float]):
+                Bounding box coordinates as (min_longitude, min_latitude, max_longitude, max_latitude).
+            time_range (tuple[datetime, datetime]):
+                Time range as (start_date, end_date) defining the period for which to fetch data.
+
+        Returns:
+            xr.Dataset: An xarray Dataset containing mean sea level pressure data with
+            spatial and temporal information.
+        """
+        return self.cds_client.fetch_data_single_levels_xr("derived-era5-single-levels-daily-statistics", Variable.mslp, bbox, time_range)
 
     def z500_geopotential_mean_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime]) -> gpd.GeoDataFrame:
         """
@@ -440,7 +459,28 @@ class DataClient():
         """
         return self.cds_client.fetch_data_pressure_levels_gpd("derived-era5-pressure-levels-daily-statistics", Variable.geopotential, bbox, time_range, levels=[500])
     
-    def fetch_data(self, parameter:str, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], months:list[str]|list[int]|None=None, from_unit:str|None = None, to_unit:str|None = None) -> gpd.GeoDataFrame | None:
+    def z500_geopotential_mean_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime]) -> xr.Dataset:
+        """
+        Fetch daily mean geopotential data at 500 hPa pressure level from ERA5.
+
+        This method retrieves geopotential height data at the 500 hPa pressure level,
+        which is commonly used in meteorological analysis to identify atmospheric patterns
+        and pressure systems.
+
+        Parameters:
+            bbox (tuple[float, float, float, float]): 
+                Bounding box coordinates in the format (min_longitude, min_latitude, max_longitude, max_latitude) defining the geographical area of interest.
+            time_range (tuple[datetime, datetime]): 
+                Time range as a tuple of two datetime objects (start_date, end_date) defining the temporal extent of the data.
+
+        Returns:
+            xr.Dataset: 
+                An xarray Dataset containing the daily mean geopotential data
+                at 500 hPa pressure level for the specified spatial and temporal extent.
+        """
+        return self.cds_client.fetch_data_pressure_levels_xr("derived-era5-pressure-levels-daily-statistics", Variable.geopotential, bbox, time_range, levels=[500])
+    
+    def fetch_data(self, parameter:str, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], from_unit:str|None = None, to_unit:str|None = None) -> gpd.GeoDataFrame | None:
         """
         Retrieve climate data for a specified parameter, bounding box, and time range.
 
@@ -558,10 +598,10 @@ class DataClient():
                 ds = self.get_daily_data_xr(bbox, [time_range], variable)
             case Variable.geopotential:
                 # ToDo implement geopotential xr fetching
-                raise NotImplementedError("Geopotential xr fetching not implemented yet.")
+                ds = self.z500_geopotential_mean_xr(bbox, time_range)
             case Variable.mslp:
                 # ToDo implement mslp xr fetching
-                raise NotImplementedError("Mean sea level pressure xr fetching not implemented yet.")
+                ds = self.mean_sea_level_pressure_xr(bbox, time_range)
             case _:
                 raise ValueError(f"Unsupported variable for xarray output: {variable}")
         
@@ -720,7 +760,7 @@ class DataClient():
         return self.fetch_data(*args, **kwargs)
     
 
-    def gmst(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], from_unit:str = "k", to_unit:str = "c") -> gpd.GeoDataFrame:
+    def gmst(self, time_range: tuple[datetime,datetime], from_unit:str = "k", to_unit:str = "c", bbox: tuple[float,float,float,float] | None = None) -> gpd.GeoDataFrame:
         """
         Fetch global mean surface temperature data for a given bounding box and time range.
 
@@ -738,13 +778,15 @@ class DataClient():
             gpd.GeoDataFrame: GeoDataFrame containing global mean surface temperature data
             in the specified unit.
         """
-        # Implementation will go here
+        # 
+        if bbox is None:
+            bbox = (-180.0, -90.0, 180.0, 90.0)
         gdf = self.cds_client._fetch_data_monthly_averaged_gpd('2m_temperature', bbox, time_range)
         # Convert temperature units
         gdf['t2m'] = Conversions.convert_temperature(gdf['t2m'], from_unit, to_unit)
         return gdf
     
-    def gmst_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], from_unit:str = "k", to_unit:str = "c") -> xr.Dataset:
+    def gmst_xr(self, time_range: tuple[datetime,datetime], bbox: tuple[float,float,float,float] | None = None, from_unit:str = "k", to_unit:str = "c") -> xr.Dataset:
         """
         Fetch global mean surface temperature data for a given bounding box and time range.
 
@@ -761,6 +803,8 @@ class DataClient():
             xr.Dataset: xarray Dataset containing global mean surface temperature data
             in the specified unit.
         """
+        if bbox is None:
+            bbox = (-180.0, -90.0, 180.0, 90.0)
         
         ds = self.cds_client._fetch_data_monthly_averaged_xr('2m_temperature', bbox, time_range)
         # Concatenate all Datasets

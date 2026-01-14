@@ -706,68 +706,48 @@ class Utils:
         """
         return (west, south, east, north)
     
+    @staticmethod
+    def datetime_to_xr_time(dt: datetime, ds: xr.Dataset) -> Any:
+        """
+        Convert a Python datetime.datetime to a value compatible with ds.time.
 
+        Parameters
+        ----------
+        dt : datetime.datetime
+            Python datetime (naive or timezone-removed).
+        ds : xarray.Dataset or DataArray
+            Dataset with a time coordinate.
 
+        Returns
+        -------
+        datetime.datetime or cftime.datetime
+        """
 
-# temp paste of the weighted mean method remove later
+        import cftime
+        sample = ds.time.values[0]
 
-    # with xr.open_dataset(filein, engine='cfgrib') as ds:
-    #     # calculate weights
-    #     weights = latitude_weights(ds)
-    #     # do area-averaging with weights
-    #     ds_mean = ds.reduce(nanaverage, dim=("longitude", "latitude"), weights=weights)
-    #     # scale and convert units — only needed for other variables, not temperature
-    #     ds_mean = ds_mean * scale_up(short_name) - offset(short_name, product) 
+        # Dataset uses cftime (non-standard calendar)
+        if isinstance(sample, cftime.datetime):
+            calendar = ds.time.encoding.get("calendar", "standard")
 
+            cls = {
+                "noleap": cftime.DatetimeNoLeap,
+                "365_day": cftime.DatetimeNoLeap,
+                "360_day": cftime.Datetime360Day,
+                "julian": cftime.DatetimeJulian,
+                "gregorian": cftime.DatetimeGregorian,
+                "standard": cftime.DatetimeGregorian,
+                "proleptic_gregorian": cftime.DatetimeProlepticGregorian,
+            }.get(calendar)
 
+            if cls is None:
+                raise ValueError(f"Unsupported calendar: {calendar}")
 
-    # def latitude_weights(data, spatial_dims=['latitude','longitude']):
-    #     # Calculate the weights
-    #     weights = np.cos(np.radians(data.coords['latitude'].values))
-    #     weights = weights/np.nanmean(weights)
+            return cls(
+                dt.year, dt.month, dt.day,
+                dt.hour, dt.minute, dt.second
+            )
 
-    #     # Order the spatial dims
-    #     spatial_dims = [dim for dim in data.dims if dim in spatial_dims]
-    #     lat_index = spatial_dims.index('latitude')
-    #     dim_lens = [len(data[dim]) for dim in spatial_dims]
-
-    #     # create the output
-    #     ones = np.ones(dim_lens)
-    #     weights_shape = [1 for dim in spatial_dims]
-    #     weights_shape[lat_index] = weights.shape[0]
-    #     weights = ones * weights.reshape(weights_shape)
-    #     return weights   
-
-    # def nanaverage(data, weights=None, **kwargs):
-    #     if weights is not None:
-    #         # set weights to nan where data is nan:
-    #         this_weights = np.ones(data.shape)*weights
-    #         this_weights[np.isnan(data)] = np.nan
-
-    #         # Weights must be scaled to the mean of valid
-    #         #  weights for each relevant axis:
-    #         this_denom = np.nansum(
-    #             this_weights, **kwargs
-    #         )
-    #         # If averaging over axis/axes then we must add dummy
-    #         # dimension[s] to the denominator to make compatible
-    #         # with the weights.
-    #         axis = kwargs.get('axis')
-    #         if axis is not None:
-    #             reshape = list(this_weights.shape)
-    #             for a in axis:
-    #                 reshape[a] = 1
-    #             this_denom = this_denom.reshape(reshape)
-
-    #         # Scale weights to mean of valid weights:
-    #         this_weights = (
-    #             this_weights/this_denom
-    #         )
-    #         # Apply weights to data:
-    #         nanaverage = np.nansum(
-    #             data * this_weights, **kwargs
-    #         )
-    #     else:
-    #         nanaverage = np.nanmean(data, **kwargs)
-
-    #     return nanaverage
+        # Dataset already uses pandas / numpy datetime
+        return pd.Timestamp(dt).to_pydatetime()
+s

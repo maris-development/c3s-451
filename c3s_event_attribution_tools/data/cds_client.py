@@ -8,6 +8,7 @@ import pandas as pd
 import xarray as xr
 import tempfile
 import zipfile
+import cftime
 from hashlib import sha256
 
 if __import__('sys').platform in ['linux']:
@@ -740,16 +741,16 @@ class CDSClient():
         end = pd.Timestamp(end_dt)
         dates = pd.date_range(start=start, end=end, freq='D')
 
-        year = str(start.year)
+        years = sorted({d.strftime('%Y') for d in dates})
         months = sorted({d.strftime('%m') for d in dates})
         days = sorted({d.strftime('%d') for d in dates})
-
+        
         request = {
             "temporal_resolution": temporal_resolution,
             "experiment": experiment,
             "variable": variable,
             "model": model,
-            "year": [year],
+            "year": years,
             "month": months,
             "day": days,
             "time_zone": "utc+00:00",
@@ -763,27 +764,41 @@ class CDSClient():
     def _fetch_data_cmip6_netcdf(self, variable: str, model: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime], experiment: str = "ssp5_8_5", temporal_resolution: str = "daily") -> str:
         dataset = "projections-cmip6"
         req = self._build_request_cmip6(variable, model, time_range, bbox, experiment, temporal_resolution)
-        temp_dir = tempfile.TemporaryDirectory(delete=False)
-        with temp_dir:
-            zip_path = f"{temp_dir.name}/cmip6_data.zip"
+        req_hash = sha256(str(req).encode('utf-8')).hexdigest()
+        # Fetch the temporary directory of the OS
+        temp_dir = tempfile.gettempdir()
+        temp_file_path = os.path.join(temp_dir, f"cds_cmip6_{req_hash}.nc")
+        
+        if not os.path.exists(temp_file_path):
+            print("Downloading CMIP6 data from CDS, this may take a while...")
+            zip_path = os.path.join(temp_dir, f"cds_cmip6_{req_hash}.zip")
+            # download as zip and extract
             self.cds_client.retrieve(
                 dataset,
                 req
             ).download(target=zip_path)
-            # unzip the file
+            # extract netcdf from zip and copy to temp_file_path
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir.name)
+                zip_ref.extractall(temp_dir)
             # find the netcdf file in the extracted files
             for file_name in zip_ref.namelist():
                 if file_name.endswith('.nc'):
-                    return f"{temp_dir.name}/{file_name}"
-            raise FileNotFoundError("No netCDF file found in the downloaded CMIP6 data.")
+                    extracted_path = os.path.join(temp_dir, file_name)
+                    os.rename(extracted_path, temp_file_path)
+                    break
+        else:
+            print("Using locally cached CMIP6 data from CDS.")
+        return temp_file_path
         
     def fetch_cmip6_xr(self, variable: str, model: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime], experiment: str = "ssp5_8_5", temporal_resolution: str = "daily") -> xr.Dataset:
         file = self._fetch_data_cmip6_netcdf(variable, model, bbox, time_range, experiment, temporal_resolution)
         ds = xr.open_dataset(file)
+        # Convert filter time range to approriate calender
+        xr_time_start = Utils.datetime_to_xr_time(time_range[0], ds)
+        xr_time_end = Utils.datetime_to_xr_time(time_range[1], ds)
+
         # filter time to exact range
-        ds = ds.sel(time=slice(time_range[0], time_range[1]))
+        ds = ds.sel(time=slice(xr_time_start, xr_time_end))
         return ds
     
     def fetch_cmip6_gpd(self, variable: str, model: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime], experiment: str = "ssp5_8_5", temporal_resolution: str = "daily") -> gpd.GeoDataFrame:

@@ -67,22 +67,28 @@ anomaly_positive_cmap = ListedColormap(ANOMALY_COLORS[1:], name="anomaly_positiv
 anomaly_negative_cmap = ListedColormap(ANOMALY_COLORS[:3], name="anomaly_negative_cmap")
 
 class Plot:
-    """Class containing static methods for plotting geospatial data with appropriate colormaps and styles."""
+    '''
+    Class containing static methods for plotting geospatial data with appropriate colormaps and styles.
+    '''
     
     
     @staticmethod
-    def cmap_norm_boundary(vmin: int | float, vmax: int | float, steps: int):
-        """Generates a discrete colormap normalization for plotting.
+    def cmap_norm_boundary(vmin:float, vmax:float, steps:int) -> BoundaryNorm:
+        '''
+        Generates a discrete colormap normalization for plotting.
 
         Parameters:
-            vmin (int | float): The minimum data value.
-            vmax (int | float): The maximum data value.
-            steps (int): The approximate number of discrete steps/colors desired.
+            vmin (float, required):
+                The minimum data value.
+            vmax (float, required):
+                The maximum data value.
+            steps (int, required):
+                The approximate number of discrete steps/colors desired.
 
         Returns:
-            matplotlib.colors.BoundaryNorm: A BoundaryNorm object suitable for
-                discrete colormapping.
-        """
+            matplotlib.colors.BoundaryNorm:
+                A BoundaryNorm object suitable for discrete colormapping.
+        '''
         vmin_i, vmax_i = int(np.floor(vmin)), int(np.ceil(vmax))
         # Create integer step boundaries
         step_size = max(1, math.ceil((vmax_i - vmin_i) / steps))
@@ -93,41 +99,58 @@ class Plot:
         return BoundaryNorm(boundaries, len(boundaries) - 1)
 
     @staticmethod
-    def cmap_norm_twoslope(vmin, vmax, center):
-        """Generates a TwoSlopeNorm colormap normalization.
+    def cmap_norm_twoslope(vmin:float, vmax:float, center:float) -> TwoSlopeNorm:
+        '''
+        Generates a TwoSlopeNorm colormap normalization.
 
         This normalization is useful for plotting data where the color mapping needs
         to be non-linear around a specified center value (e.g., zero or a reference point),
         allowing for different color gradients on either side of the center.
 
         Parameters:
-            vmin (float): The minimum data value.
-            vmax (float): The maximum data value.
-            center (float): The data value that should be mapped to the center of the colormap.
+            vmin (float, required):
+                The minimum data value.
+            vmax (float, required):
+                The maximum data value.
+            center (float, required):
+                The data value that should be mapped to the center of the colormap.
 
         Returns:
-            matplotlib.colors.TwoSlopeNorm: A TwoSlopeNorm object.
-        """
+            matplotlib.colors.TwoSlopeNorm:
+                A TwoSlopeNorm object.
+        '''
         return TwoSlopeNorm(vmin=vmin, vcenter=center, vmax=vmax)
 
     # set global style paramaters
     @staticmethod
     def set_style(param:str, value:str|int|float):
+        '''
+        Sets a global Matplotlib style parameter.
+
+        Parameters:
+            param (str, required):
+                The Mathplotlib rcParams parameter to set (e.g., 'font.size')
+            value (str | int | float, required):
+                The value to assign to the specified parameter
+        '''
         plt.rcParams[param] = value
 
     @staticmethod
     def precip_bins(vmax: float):
-        """Calculates a set of adaptive precipitation bins based on the maximum data value.
+        '''
+        Calculates a set of adaptive precipitation bins based on the maximum data value.
 
         The bins are designed to provide an appropriate color-mapping resolution for
         different ranges of precipitation intensity (e.g., mm/day or total mm).
 
         Parameters:
-            vmax (float): The maximum precipitation value in the dataset.
+            vmax (float, required):
+                The maximum precipitation value in the dataset.
 
         Returns:
-            numpy.ndarray: An array of precipitation bin boundaries.
-        """
+            numpy.ndarray:
+                An array of precipitation bin boundaries.
+        '''
         if vmax <= 15:
             return np.array([0, 1, 2, 3, 4, 6, 7, 8, 10])
         elif vmax <= 40:
@@ -144,20 +167,25 @@ class Plot:
 
     # get colormap
     @staticmethod
-    def get_colormap(map:str, vmin, vmax, value_col:str=None): 
-        """Retrieves the appropriate colormap and normalization for plotting based on the data type.
+    def get_colormap(map:str, vmin:float, vmax:float, value_col:str=None) -> tuple[str|ListedColormap, BoundaryNorm|TwoSlopeNorm]: 
+        '''
+        Retrieves the appropriate colormap and normalization for plotting based on the data type.
 
         Parameters:
-            map (str): A key identifying the data type (e.g., 't2m', 'tp', 'anomaly', or 'sst').
-            vmin (float): The minimum data value.
-            vmax (float): The maximum data value.
-            value_col (str, optional): A secondary key, primarily for 'anomaly', to specify
+            map (str, required):
+                A key identifying the data type (e.g., 't2m', 'tp', 'anomaly', or 'sst').
+            vmin (float, required):
+                The minimum data value.
+            vmax (float, required):
+                The maximum data value.
+            value_col (str, optional):
+                A secondary key, primarily for 'anomaly', to specify
                 the underlying variable type (e.g., "t2m", "sst"). Defaults to None.
 
         Returns:
-            tuple[matplotlib.colors.Colormap, matplotlib.colors.Normalize]:
+            tuple[str | matplotlib.colors.Colormap, matplotlib.colors.BoundaryNorm | matplotlib.colors.TwoSlopeNorm]:
                 The colormap object and the normalization object for the data.
-        """
+        '''
         original_map = map
 
         match map:
@@ -190,16 +218,14 @@ class Plot:
     def visualize_geo(
         df,
         value_col: str,
-        lon_col: str,
-        lat_col: str,
-        backend: str = "plotly",
-        
+        lon_col: str = "longitude",
+        lat_col: str = "latitude",
+        backend: str = "plotly",      
         # matplotlib kwargs
         figsize=(10, 10),
         cmap="viridis",
         edgecolor="black",
-        alpha=0.7,
-        
+        alpha=0.7,        
         # plotly kwargs
         mapbox_style="carto-positron",
         zoom=3,
@@ -207,39 +233,54 @@ class Plot:
         height=600,
         size=None,
         hover_name=None,
-    ):
-        """Visualize a tabular or GeoDataFrame spatially.
+    ) -> plt.Figure:
+        '''
+        Visualize a tabular or GeoDataFrame spatially.
 
         This function supports plotting geographical data using either Matplotlib/GeoPandas
         or Plotly, handling the conversion of standard DataFrames (with lon/lat columns)
         to GeoDataFrames if necessary.
 
         Parameters:
-            df (pd.DataFrame or gpd.GeoDataFrame): Your table containing lon/lat or a geometry column.
-            value_col (str): Column name to drive the color (or size) of points/polygons.
-            lon_col (str): Column name for longitude (if df is not yet a GeoDataFrame).
-            lat_col (str): Column name for latitude (if df is not yet a GeoDataFrame).
-            backend (str, optional): Which renderer to use. Must be 'matplotlib' or 'plotly'.
-                Defaults to "plotly".
-            figsize (tuple, optional): Matplotlib figure size (width, height). Defaults to (10, 10).
-            cmap (str, optional): Matplotlib colormap name. Defaults to "viridis".
-            edgecolor (str, optional): Matplotlib edge color for geometries. Defaults to "black".
-            alpha (float, optional): Matplotlib transparency level. Defaults to 0.7.
-            mapbox_style (str, optional): Plotly map style (e.g., "carto-positron").
-                Defaults to "carto-positron".
-            zoom (int, optional): Plotly initial zoom level. Defaults to 3.
-            width (int, optional): Plotly figure width. Defaults to 800.
-            height (int, optional): Plotly figure height. Defaults to 600.
-            size (str, optional): Plotly column name to scale point size. Defaults to None.
-            hover_name (str, optional): Plotly column name for hover labels. Defaults to None.
+            df (pd.DataFrame | gpd.GeoDataFrame, required):
+                Your table containing lon/lat or a geometry column.
+            value_col (str, required):
+                Column name to drive the color (or size) of points/polygons.
+            lon_col (str, optional):
+                Column name for longitude (if df is not yet a GeoDataFrame).
+            lat_col (str, optional):
+                Column name for latitude (if df is not yet a GeoDataFrame).
+            backend (str, optional):
+                Which renderer to use. Must be 'matplotlib' or 'plotly'. Defaults to "plotly".
+            figsize (tuple, optional):
+                Matplotlib figure size (width, height). Defaults to (10, 10).
+            cmap (str, optional):
+                Matplotlib colormap name. Defaults to "viridis".
+            edgecolor (str, optional):
+                Matplotlib edge color for geometries. Defaults to "black".
+            alpha (float, optional):
+                Matplotlib transparency level. Defaults to 0.7.
+            mapbox_style (str, optional):
+                Plotly map style (e.g., "carto-positron"). Defaults to "carto-positron".
+            zoom (int, optional):
+                Plotly initial zoom level. Defaults to 3.
+            width (int, optional):
+                Plotly figure width. Defaults to 800.
+            height (int, optional):
+                Plotly figure height. Defaults to 600.
+            size (str, optional):
+                Plotly column name to scale point size. Defaults to None.
+            hover_name (str, optional):
+                Plotly column name for hover labels. Defaults to None.
 
         Returns:
-            matplotlib.figure.Figure or plotly.graph_objs._figure.Figure:
+            matplotlib.figure.Figure | plotly.graph_objs._figure.Figure:
                 The generated figure object.
 
         Raises:
-            ValueError: If an unknown backend is provided.
-        """
+            ValueError:
+                If an unknown backend is provided.
+        '''
         # 1) ensure GeoDataFrame
         if not isinstance(df, gpd.GeoDataFrame):
             df = gpd.GeoDataFrame(
@@ -287,36 +328,40 @@ class Plot:
             raise ValueError(f"Unknown backend '{backend}'. Choose 'matplotlib' or 'plotly'.")
 
     @staticmethod
-    def add_image_below(fig, image_path=LOGO_HORIZON_PATH,
+    def add_image_below(fig,
+                        image_path=LOGO_HORIZON_PATH,
                         min_height_frac=0.06,
                         max_height_frac=0.40,
                         pad_frac=0.02,
                         save_path=None
-    ):
-        """Adds an image (e.g., a logo or watermark) below a Matplotlib figure, preserving its aspect ratio.
+    ) -> tuple[plt.Figure, plt.Axes]:
+        '''
+        Adds an image (e.g., a logo or watermark) below a Matplotlib figure, preserving its aspect ratio.
 
         This function modifies the figure in-place by adjusting the position of all existing
         axes upward to make room for the new image at the bottom. The resulting figure is
         displayed and can be saved to a file.
 
         Parameters:
-            fig (matplotlib.figure.Figure): The Matplotlib figure object to modify.
-            image_path (str): The file path to the image to be inserted.
-            min_height_frac (float, optional): The minimum fractional height of the figure
-                to reserve for the image. Defaults to 0.06.
-            max_height_frac (float, optional): The maximum fractional height of the figure
-                to reserve for the image. Defaults to 0.40.
-            pad_frac (float, optional): The fractional padding space between the original
-                plot area and the added image. Defaults to 0.02.
-            save_path (str, optional): The path where the final figure should be saved.
-                If None, the figure is not saved. Defaults to None.
+            fig (matplotlib.figure.Figure, required):
+                The Matplotlib figure object to modify.
+            image_path (str, optional):
+                The file path to the image to be inserted.
+            min_height_frac (float, optional):
+                The minimum fractional height of the figure to reserve for the image. Defaults to 0.06.
+            max_height_frac (float, optional):
+                The maximum fractional height of the figure to reserve for the image. Defaults to 0.40.
+            pad_frac (float, optional):
+                The fractional padding space between the original plot area and the added image. Defaults to 0.02.
+            save_path (str, optional):
+                The path where the final figure should be saved. If None, the figure is not saved. Defaults to None.
 
         Returns:
             tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
                 A tuple containing:
                 - fig: The modified Matplotlib figure object.
                 - ax_img: The new Axes object containing the added image.
-        """
+        '''
         img = mpimg.imread(image_path)
         img_h, img_w = img.shape[0:2]
 
@@ -355,52 +400,78 @@ class Plot:
 
     # plots a single plot of a GeoDataFrame
     @staticmethod
-    def plot_gdf(gdf:gpd.GeoDataFrame, value_col:str, borders:bool=True, coastlines:bool=True,
-                gridlines:bool=True, title:str|None=None, legend:bool=True, legend_title:str|None=None,
-                cmap:str=None, fig_size:tuple[int, int]=(7,5), polygons:list[Polygon]|None=None,
-                projection:cartopy.crs=ccrs.PlateCarree(), extends:tuple[float, float, float, float]|None=None,
-                dpi:int=100, marker:str='s', add_logos:bool=True, polygon_color='cyan', ax=None):
-        """Plots a single map of a GeoDataFrame, applying appropriate colormap and cartographic context.
+    def plot_gdf(gdf:gpd.GeoDataFrame,
+                value_col:str,
+                borders:bool=True,
+                coastlines:bool=True,
+                gridlines:bool=True,
+                title:str|None=None,
+                legend:bool=True,
+                legend_title:str|None=None,
+                cmap:str=None,
+                fig_size:tuple[int, int]=(7,5),
+                polygons:list[Polygon]|None=None,
+                projection:cartopy.crs=ccrs.PlateCarree(),
+                extends:tuple[float, float, float, float]|None=None,
+                dpi:int=100,
+                marker:str='s',
+                add_logos:bool=True,
+                polygon_color='cyan',
+                ax=None):
+        '''
+        Plots a single map of a GeoDataFrame, applying appropriate colormap and cartographic context.
 
         The function handles setting up the Matplotlib figure, Cartopy projection, colormapping,
         and adding map features like coastlines, borders, and a custom colorbar.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The GeoDataFrame to plot. Assumes point geometries that will be
+            gdf (gpd.GeoDataFrame, required):
+                The GeoDataFrame to plot. Assumes point geometries that will be
                 converted to small box polygons for visualization.
-            value_col (str): The column name in the GeoDataFrame whose values determine the color.
-            borders (bool, optional): Whether to draw country borders. Defaults to True.
-            coastlines (bool, optional): Whether to draw coastlines. Defaults to True.
-            gridlines (bool, optional): Whether to draw latitude/longitude gridlines and labels.
-                Defaults to True.
-            title (str | None, optional): The title of the plot. Defaults to None.
-            legend (bool, optional): Whether to display the colorbar. Defaults to True.
-            legend_title (str | None, optional): The title for the colorbar. Defaults to the value_col name.
-            cmap (str, optional): The desired colormap type (e.g., "t2m", "tp", "anomaly") or a standard
+            value_col (str, required):
+                The column name in the GeoDataFrame whose values determine the color.
+            borders (bool, optional):
+                Whether to draw country borders. Defaults to True.
+            coastlines (bool, optional):
+                Whether to draw coastlines. Defaults to True.
+            gridlines (bool, optional):
+                Whether to draw latitude/longitude gridlines and labels. Defaults to True.
+            title (str | None, optional):
+                The title of the plot. Defaults to None.
+            legend (bool, optional):
+                Whether to display the colorbar. Defaults to True.
+            legend_title (str | None, optional):
+                The title for the colorbar. Defaults to the value_col name.
+            cmap (str, optional):
+                The desired colormap type (e.g., "t2m", "tp", "anomaly") or a standard
                 Matplotlib colormap name. Defaults to None (inferred from `value_col`).
-            fig_size (tuple[int, int], optional): Matplotlib figure size (width, height) in inches.
-                Defaults to (7, 5).
-            polygons (list[Polygon] | None, optional): A list of shapely Polygon objects to overlay
-                on the map (e.g., study area boundaries). Defaults to None.
-            projection (cartopy.crs, optional): The Cartopy coordinate reference system for the map.
-                Defaults to ccrs.PlateCarree().
-            extends (tuple[float, float, float, float] | None, optional): The map extent as
-                [lon_min, lon_max, lat_min, lat_max]. Defaults to None (auto-extent).
-            dpi (int, optional): Dots per inch for the figure resolution. Defaults to 100.
-            marker (str, optional): The marker style to use for plotting point data. Defaults to 's' (square).
-            add_logos (bool, optional): Whether to add a custom image/logo below the plot.
-                Defaults to True.
-            polygon_color (str, optional): Color for the overlaid polygons. Defaults to 'cyan'.
-            ax (matplotlib.axes.Axes, optional): An existing Matplotlib Axes object to plot onto.
-                Defaults to None.
+            fig_size (tuple[int, int], optional):
+                Matplotlib figure size (width, height) in inches. Defaults to (7, 5).
+            polygons (list[Polygon] | None, optional)
+                 A list of shapely Polygon objects to overlay on the map
+                 (e.g., study area boundaries). Defaults to None.
+            projection (cartopy.crs, optional):
+                The Cartopy coordinate reference system for the map. Defaults to ccrs.PlateCarree().
+            extends (tuple[float, float, float, float] | None, optional):
+                The map extent as [lon_min, lon_max, lat_min, lat_max]. Defaults to None (auto-extent).
+            dpi (int, optional):
+                Dots per inch for the figure resolution. Defaults to 100.
+            marker (str, optional):
+                The marker style to use for plotting point data. Defaults to 's' (square).
+            add_logos (bool, optional):
+                Whether to add a custom image/logo below the plot. Defaults to True.
+            polygon_color (str, optional):
+                Color for the overlaid polygons. Defaults to 'cyan'.
+            ax (matplotlib.axes.Axes, optional):
+                An existing Matplotlib Axes object to plot onto. Defaults to None.
 
         Returns:
-            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes] or tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, matplotlib.axes.Axes]:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes] | tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, matplotlib.axes.Axes]:
                 A tuple containing:
                 - fig: The generated Matplotlib Figure.
                 - ax: The Matplotlib Axes object with the map.
                 - img_ax: The Axes object containing the added logo (only returned if `add_logos` is True).
-        """
+        '''
         # get colormap
         gdfs_local = gdf.copy()
 
@@ -498,59 +569,85 @@ class Plot:
     ## shared colorbar is title + legend_title
     ## individual colorbars have legend_title and complete fig has title
     @staticmethod
-    def subplot_gdf(
-        gdfs:gpd.GeoDataFrame, value_col:str, legend_title:str, datetime_col:str='valid_time',
-        polygons:list[Polygon]=None, ncols:int=5, figsize:tuple[int, int]=(20, 12),
-        cmap:str=None, borders:bool=True, coastlines:bool=True, gridlines:bool=True,
-        subtitle:str=None, projection:cartopy.crs=ccrs.PlateCarree(),
-        extends:tuple[float, float, float, float]=None, dpi:int=100,
-        flatten_empty_plots:bool=True, marker:str='s', shared_colorbar:bool=True,
-        add_logos:bool=True, polygon_color='cyan'
-    ):
-        """Generates a multi-panel subplot visualization of a GeoDataFrame, typically for time series data.
+    def subplot_gdf(gdfs:gpd.GeoDataFrame,
+                    value_col:str,
+                    legend_title:str, 
+                    datetime_col:str='valid_time',
+                    polygons:list[Polygon]=None,
+                    ncols:int=5,
+                    figsize:tuple[int, int]=(20, 12),
+                    cmap:str=None,
+                    borders:bool=True,
+                    coastlines:bool=True,
+                    gridlines:bool=True,
+                    subtitle:str=None,
+                    projection:cartopy.crs=ccrs.PlateCarree(),
+                    extends:tuple[float, float, float, float]=None,
+                    dpi:int=100,
+                    flatten_empty_plots:bool=True,
+                    marker:str='s',
+                    shared_colorbar:bool=True,
+                    add_logos:bool=True,
+                    polygon_color='cyan'
+    ) -> tuple[plt.Figure, np.ndarray[plt.Axes]] | tuple[plt.Figure, np.ndarray[plt.Axes], plt.Axes]:
+        '''
+        Generates a multi-panel subplot visualization of a GeoDataFrame, typically for time series data.
 
         The GeoDataFrame is grouped by unique dates in the `datetime_col`, and each resulting
         subset is plotted on its own subplot with shared or individual color scales.
 
         Parameters:
-            gdfs (gpd.GeoDataFrame): The GeoDataFrame containing the data to plot, with a temporal column.
-            value_col (str): The column name for the values to be colored.
-            legend_title (str): The title for the shared or individual colorbar.
-            datetime_col (str, optional): The column containing date/time information for grouping.
-                Defaults to 'valid_time'.
-            polygons (list[Polygon], optional): A list of shapely Polygon objects to overlay
-                on each map (e.g., study area boundaries). Defaults to None.
-            ncols (int, optional): The number of columns in the subplot grid. Defaults to 5.
-            figsize (tuple[int, int], optional): Matplotlib figure size (width, height) in inches.
-                Defaults to (20, 12).
-            cmap (str, optional): The desired colormap type (e.g., "t2m", "tp", "anomaly") or a standard
+            gdfs (gpd.GeoDataFrame, required):
+                The GeoDataFrame containing the data to plot, with a temporal column.
+            value_col (str, required):
+                The column name for the values to be colored.
+            legend_title (str, required):
+                The title for the shared or individual colorbar.
+            datetime_col (str, optional):
+                The column containing date/time information for grouping. Defaults to 'valid_time'.
+            polygons (list[Polygon], optional):
+                A list of shapely Polygon objects to overlay on each map (e.g., study area boundaries).
+                Defaults to None.
+            ncols (int, optional):
+                The number of columns in the subplot grid. Defaults to 5.
+            figsize (tuple[int, int], optional):
+                Matplotlib figure size (width, height) in inches. Defaults to (20, 12).
+            cmap (str, optional):
+                The desired colormap type (e.g., "t2m", "tp", "anomaly") or a standard
                 Matplotlib colormap name. Defaults to None (inferred from `value_col`).
-            borders (bool, optional): Whether to draw country borders on each subplot. Defaults to True.
-            coastlines (bool, optional): Whether to draw coastlines on each subplot. Defaults to True.
-            gridlines (bool, optional): Whether to draw latitude/longitude gridlines and labels.
-                Defaults to True.
-            subtitle (str, optional): A main title for the entire figure (suptitle). Defaults to None.
-            projection (cartopy.crs, optional): The Cartopy coordinate reference system for the map.
-                Defaults to ccrs.PlateCarree().
-            extends (tuple[float, float, float, float], optional): The map extent as
-                [lon_min, lon_max, lat_min, lat_max]. Defaults to None (auto-extent).
-            dpi (int, optional): Dots per inch for the figure resolution. Defaults to 100.
-            flatten_empty_plots (bool, optional): If True, hides unused axes at the end of the grid.
-                Defaults to True.
-            marker (str, optional): The marker style for plotting point data. Defaults to 's' (square).
-            shared_colorbar (bool, optional): If True, uses a single colorbar for the whole figure;
+            borders (bool, optional):
+                Whether to draw country borders on each subplot. Defaults to True.
+            coastlines (bool, optional):
+                Whether to draw coastlines on each subplot. Defaults to True.
+            gridlines (bool, optional):
+                Whether to draw latitude/longitude gridlines and labels. Defaults to True.
+            subtitle (str, optional):
+                A main title for the entire figure (suptitle). Defaults to None.
+            projection (cartopy.crs, optional):
+                The Cartopy coordinate reference system for the map. Defaults to ccrs.PlateCarree().
+            extends (tuple[float, float, float, float], optional):
+                The map extent as [lon_min, lon_max, lat_min, lat_max]. Defaults to None (auto-extent).
+            dpi (int, optional):
+                Dots per inch for the figure resolution. Defaults to 100.
+            flatten_empty_plots (bool, optional):
+                If True, hides unused axes at the end of the grid. Defaults to True.
+            marker (str, optional):
+                The marker style for plotting point data. Defaults to 's' (square).
+            shared_colorbar (bool, optional):
+                If True, uses a single colorbar for the whole figure;
                 otherwise, each subplot gets its own colorbar. Defaults to True.
-            add_logos (bool, optional): Whether to add a custom image/logo below the plot.
-                Defaults to True.
-            polygon_color (str, optional): Color for the overlaid polygons. Defaults to 'cyan'.
+            add_logos (bool, optional):
+                Whether to add a custom image/logo below the plot. Defaults to True.
+            polygon_color (str, optional):
+                Color for the overlaid polygons. Defaults to 'cyan'.
 
         Returns:
-            tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes]] or tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes], matplotlib.axes.Axes]:
+            tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes]] | tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes], matplotlib.axes.Axes]:
                 A tuple containing:
                 - fig: The generated Matplotlib Figure.
                 - axes: A flattened NumPy array of Matplotlib Axes objects for all subplots.
                 - img_ax: The Axes object containing the added logo (only returned if `add_logos` is True).
-        """
+        '''
         gdfs_local = gdfs.copy()
         # set cmap type
         cmap = cmap if cmap else value_col
@@ -703,36 +800,46 @@ class Plot:
 
 
     @staticmethod
-    def plot_poly(polygons:list[Polygon], coords:list[list[float]], 
-                layer:xr.DataArray=None, cmap=None, norm=None, layer_type:str="elevation",
-                projection:cartopy.crs=ccrs.PlateCarree()):
-        """Plots geographical polygon boundaries over a base map, optionally displaying background raster data.
+    def plot_poly(polygons:list[Polygon],
+                  coords:list[list[float]],
+                  layer:xr.DataArray=None,
+                  cmap=None,
+                  norm=None,
+                  layer_type:str="elevation",
+                  projection:cartopy.crs=ccrs.PlateCarree()
+                ) -> tuple[plt.Figure, plt.Axes]:
+        '''
+        Plots geographical polygon boundaries over a base map, optionally displaying background raster data.
 
         This function is designed to visualize a selected region defined by a set of coordinates,
         along with specific polygons overlaid on a Cartopy-enabled map, using an Xarray DataArray
         for background visualization (e.g., elevation or climate classification).
 
         Parameters:
-            polygons (list[Polygon]): A list of shapely Polygon objects to be plotted and highlighted.
-            coords (list[list[float]]): A list of [longitude, latitude] pairs that define the overall
-                extent of the region of interest for setting the map bounds and subsetting the layer.
-            layer (xr.DataArray, optional): The 2D raster data to plot in the background (e.g., elevation, climate).
-                Defaults to None.
-            cmap (matplotlib.colors.Colormap, optional): Colormap object to use for the background layer,
-                if applicable (especially for 'koppen' type). Defaults to None.
-            norm (matplotlib.colors.Normalize, optional): Normalization object to use for the background layer,
-                if applicable. Defaults to None.
-            layer_type (str, optional): A key defining the type of background data ('elevation' or 'koppen')
+            polygons (list[Polygon]):
+                A list of shapely Polygon objects to be plotted and highlighted.
+            coords (list[list[float]]):
+                A list of [longitude, latitude] pairs that define the overall extent of
+                the region of interest for setting the map bounds and subsetting the layer.
+            layer (xr.DataArray, optional):
+                The 2D raster data to plot in the background (e.g., elevation, climate). Defaults to None.
+            cmap (matplotlib.colors.Colormap, optional):
+                Colormap object to use for the background layer, if applicable
+                (especially for 'koppen' type). Defaults to None.
+            norm (matplotlib.colors.Normalize, optional):
+                Normalization object to use for the background layer, if applicable. Defaults to None.
+            layer_type (str, optional):
+                A key defining the type of background data ('elevation' or 'koppen')
                 to determine default styling. Defaults to "elevation".
-            projection (cartopy.crs, optional): The Cartopy coordinate reference system for the map.
-                Defaults to ccrs.PlateCarree().
+            projection (cartopy.crs, optional):
+                The Cartopy coordinate reference system for the map. Defaults to ccrs.PlateCarree().
 
         Returns:
             tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
                 A tuple containing:
                 - fig: The generated Matplotlib Figure.
                 - ax: The Matplotlib Axes object with the map.
-        """
+        '''
 
         lons, lats = zip(*coords)
         min_lon, max_lon = min(lons), max(lons)
@@ -781,29 +888,39 @@ class Plot:
         return fig, ax
 
 
-
-
     @staticmethod
-    def plot_geometry(geom, ax, color:str='green', alpha:float=0.3, projection:cartopy.crs=ccrs.PlateCarree()):
-        """Recursively plots a single Shapely geometry (Polygon, MultiPolygon, or GeometryCollection) onto a Cartopy axis.
+    def plot_geometry(geom:Polygon | MultiPolygon | GeometryCollection,
+                      ax:plt.Axes,
+                      color:str='green',
+                      alpha:float=0.3,
+                      projection:cartopy.crs=ccrs.PlateCarree()):
+        '''
+        Recursively plots a single Shapely geometry (Polygon, MultiPolygon, or GeometryCollection) onto a Cartopy axis.
 
         This function handles various geometry types by drawing the exterior line and filling the interior,
         making it suitable for visualizing area boundaries on maps.
 
         Parameters:
-            geom (shapely.geometry.base.BaseGeometry): The Shapely geometry object to plot.
-                Supports Polygon, MultiPolygon, and GeometryCollection containing these.
-            ax (matplotlib.axes.Axes): The Matplotlib Axes object (must have a Cartopy projection).
-            color (str, optional): The color for the boundary line and fill. Defaults to 'green'.
-            alpha (float, optional): The transparency level for the fill color (0.0 to 1.0).
-                Defaults to 0.3.
-            projection (cartopy.crs, optional): The Cartopy coordinate reference system for the
-                data to ensure correct plotting. Defaults to ccrs.PlateCarree().
+            geom (shapely.Polygon | shapely.MultiPolygon | shapely.GeometryCollection, required):
+                The Shapely geometry object to plot. Supports Polygon, MultiPolygon,
+                and GeometryCollection containing these.
+            ax (matplotlib.axes.Axes, required):
+                The Matplotlib Axes object (must have a Cartopy projection).
+            color (str, optional):
+                The color for the boundary line and fill. Defaults to 'green'.
+            alpha (float, optional):
+                The transparency level for the fill color (0.0 to 1.0). Defaults to 0.3.
+            projection (cartopy.crs, optional):
+                The Cartopy coordinate reference system for the data to ensure correct plotting.
+                Defaults to ccrs.PlateCarree().
 
         Raises:
-            RecursionError: If the GeometryCollection contains geometries that lead to excessive
+            RecursionError:
+                If the GeometryCollection contains geometries that lead to excessive
                 recursive calls (unlikely for standard geographic data).
-        """
+            TypeError:
+                If an unsupported geometry type is provided.
+        '''
         if isinstance(geom, Polygon):
             x, y = geom.exterior.xy
             ax.plot(x, y, color=color, linewidth=2, transform=projection)
@@ -818,26 +935,37 @@ class Plot:
                 else:
                     # Optionally handle or ignore other geometry types
                     pass
+        else:
+            raise TypeError(f"Unsupported geometry type: {type(geom)}")
 
 
     @staticmethod
-    def elevation_region(data:dict, polygons:list[Polygon], elevation:xr.DataArray, threshold:int=None, projection:cartopy.crs=ccrs.PlateCarree()):
-        """Adjusts input regions by an elevation threshold and visualizes the result on a map.
+    def elevation_region(data:dict,
+                         polygons:list[Polygon],
+                         elevation:xr.DataArray,
+                         threshold:int=None, 
+                         projection:cartopy.crs=ccrs.PlateCarree()
+                         ) -> tuple[plt.Figure, plt.Axes, list[Polygon]]:
+        '''
+        Adjusts input regions by an elevation threshold and visualizes the result on a map.
 
         This function takes geographical regions (polygons defined in a GeoJSON-like dictionary),
         filters them to only include areas where the background elevation is below a given
         threshold, and plots the original and adjusted regions over the elevation map.
 
         Parameters:
-            data (dict): A GeoJSON-like dictionary containing feature geometries (polygons)
-                under the 'features' key.
-            polygons (list[Polygon]): A list of original shapely Polygon objects derived from `data`.
-            elevation (xr.DataArray): An Xarray DataArray containing elevation data (lon, lat coordinates)
+            data (dict):
+                A GeoJSON-like dictionary containing feature geometries (polygons) under the 'features' key.
+            polygons (list[Polygon]):
+                A list of original shapely Polygon objects derived from `data`.
+            elevation (xr.DataArray):
+                An Xarray DataArray containing elevation data (lon, lat coordinates)
                 to be used for thresholding and background plotting.
-            threshold (int, optional): The maximum elevation value (in meters) to retain in the
-                adjusted regions. Defaults to 100000 (effectively no threshold).
-            projection (cartopy.crs, optional): The Cartopy coordinate reference system for plotting.
-                Defaults to ccrs.PlateCarree().
+            threshold (int, optional):
+                The maximum elevation value (in meters) to retain in the adjusted regions.
+                Defaults to 100000 (effectively no threshold).
+            projection (cartopy.crs, optional):
+                The Cartopy coordinate reference system for plotting. Defaults to ccrs.PlateCarree().
 
         Returns:
             tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, list[Polygon]]:
@@ -846,7 +974,7 @@ class Plot:
                 - ax: The Matplotlib Axes object with the map.
                 - adjusted_polygons: A list of new shapely Polygon objects representing the
                 areas of the original polygons that are below the elevation threshold.
-        """
+        '''
         threshold = threshold if threshold else 100000
 
         all_coords = []
@@ -951,43 +1079,58 @@ class Plot:
                     fig_size:tuple=(12,6), dpi:int=100, show_grid:bool=True, line_style:str=':', marker_style:str=None, 
                     draw_style:str='default', label_rotation:int=0, line_width:float=1.5, labelticks:list[str]=None, labels:list[str]=None,
                     add_logos:bool=True, center_month_labels:bool=False, full_month_names:bool=False, ax=None, ci:bool = False):
-        """Plots a time series from a DataFrame column.
+        '''
+        Plots a time series from a DataFrame column.
 
         The function sets up a Matplotlib figure/axis and plots the specified value column
         against the datetime column, applying various styling and formatting options.
 
         Parameters:
-            data (pd.DataFrame): The DataFrame containing the time series data.
-            value_col (str): The column name containing the values to plot on the y-axis.
-            title (str): The title of the plot.
-            x_label (str): The label for the x-axis (time/date).
-            y_label (str): The label for the y-axis (value_col).
-            datetime_col (str, optional): The column name containing datetime objects.
-                Defaults to 'valid_time'.
-            fig_size (tuple, optional): Matplotlib figure size (width, height) in inches.
-                Defaults to (12, 6).
-            dpi (int, optional): Dots per inch for the figure resolution. Defaults to 100.
-            show_grid (bool, optional): Whether to display a grid on the plot. Defaults to True.
-            line_style (str, optional): Matplotlib line style (e.g., '-', '--', ':').
-                Defaults to ':'.
-            marker_style (str or dict, optional): Matplotlib marker style or a dict of keyword
-                arguments for plotting markers. Defaults to None.
-            draw_style (str, optional): Matplotlib draw style (e.g., 'default', 'steps').
-                Defaults to 'default'.
-            label_rotation (int, optional): Rotation angle for x-axis tick labels. Defaults to 0.
-            line_width (float, optional): The width of the plotted line. Defaults to 1.5.
-            labelticks (list[str], optional): Custom locations for x-axis ticks. Defaults to None.
-            labels (list[str], optional): Custom labels for the x-axis ticks. Defaults to None.
-            add_logos (bool, optional): Whether to add a custom image/logo below the plot.
-                Defaults to True.
-            center_month_labels (bool, optional): If True, centers month labels under the 15th of the month.
+            data (pd.DataFrame, required):
+                The DataFrame containing the time series data.
+            value_col (str, required):
+                The column name containing the values to plot on the y-axis.
+            title (str, required):
+                The title of the plot.
+            x_label (str, required):
+                The label for the x-axis (time/date).
+            y_label (str, required):
+                The label for the y-axis (value_col).
+            datetime_col (str, optional):
+                The column name containing datetime objects. Defaults to 'valid_time'.
+            fig_size (tuple, optional):
+                Matplotlib figure size (width, height) in inches. Defaults to (12, 6).
+            dpi (int, optional):
+                Dots per inch for the figure resolution. Defaults to 100.
+            show_grid (bool, optional):
+                Whether to display a grid on the plot. Defaults to True.
+            line_style (str, optional):
+                Matplotlib line style (e.g., '-', '--', ':'). Defaults to ':'.
+            marker_style (str or dict, optional):
+                Matplotlib marker style or a dict of keyword arguments for plotting markers. Defaults to None.
+            draw_style (str, optional):
+                Matplotlib draw style (e.g., 'default', 'steps'). Defaults to 'default'.
+            label_rotation (int, optional):
+                Rotation angle for x-axis tick labels. Defaults to 0.
+            line_width (float, optional): 
+                The width of the plotted line. Defaults to 1.5.
+            labelticks (list[str], optional):
+                Custom locations for x-axis ticks. Defaults to None.
+            labels (list[str], optional):
+                Custom labels for the x-axis ticks. Defaults to None.
+            add_logos (bool, optional):
+                Whether to add a custom image/logo below the plot. Defaults to True.
+            center_month_labels (bool, optional):
+                If True, centers month labels under the 15th of the month.
                 Requires x-axis to be datetime. Defaults to False.
-            full_month_names (bool, optional): If True, uses full month names (e.g., 'January') when
+            full_month_names (bool, optional):]
+                If True, uses full month names (e.g., 'January') when
                 `center_month_labels` is True. Defaults to False.
-            ax (matplotlib.axes.Axes, optional): An existing Matplotlib Axes object to plot onto.
-                Defaults to None.
+            ax (matplotlib.axes.Axes, optional):
+                An existing Matplotlib Axes object to plot onto. Defaults to None.
             ci (bool):
-                Plot confidence interval shading if True. Expects columns {value_col}_ci_lower and {value_col}_ci_upper
+                Plot confidence interval shading if True. Expects columns {value_col}_ci_lower
+                and {value_col}_ci_upper
 
         Returns:
             tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, matplotlib.axes.Axes | None]:
@@ -995,7 +1138,7 @@ class Plot:
                 - fig: The generated Matplotlib Figure.
                 - ax: The Matplotlib Axes object with the time series plot.
                 - img_ax: The Axes object containing the added logo, or None if `add_logos` is False.
-        """
+        '''
 
         # plot_df = data.copy()
         # plot_df[datetime_col] = pd.to_datetime(plot_df[datetime_col])
@@ -1095,32 +1238,42 @@ class Plot:
         labelticks:list[int], labels:list[any], days:list[int], title:str,
         datetime_col:str="valid_time", add_logos:bool=True, fig_height:int=3, xtick_rotation:int=0, ncols:int=0
     ):
-        """Plots multiple time series showing rolling data accumulations over different day windows.
+        '''
+        Plots multiple time series showing rolling data accumulations over different day windows.
 
         Each subplot displays the time series of the specified variable aggregated over a rolling
         window (`ndays`). All historical years are plotted faintly, while the current (event)
         year is plotted prominently up to the event date.
 
         Parameters:
-            rolled_data_list (list[gpd.GeoDataFrame]): A list where each element is a GeoDataFrame
-                containing the rolling accumulation data for a specific time window.
-            value_col (str): The column name containing the accumulated values to plot on the y-axis.
-            parameter (str): The name of the parameter being plotted (e.g., 'Precipitation').
+            rolled_data_list (list[gpd.GeoDataFrame], required):
+                A list where each element is a GeoDataFrame containing the rolling
+                accumulation data for a specific time window.
+            value_col (str, required):
+                The column name containing the accumulated values to plot on the y-axis.
+            parameter (str, required):
+                The name of the parameter being plotted (e.g., 'Precipitation').
                 Used internally for logic, but not directly in the docstring.
-            event_date (datetime): The date of the event, used to highlight the current year's data
-                up to this point.
-            labelticks (list[int]): Day-of-year integers to use as x-axis tick locations.
-            labels (list[any]): Labels corresponding to `labelticks` (e.g., month abbreviations).
-            days (list[int]): A list of rolling window sizes (e.g., [3, 7, 14]) corresponding to
-                the data in `rolled_data_list`.
-            title (str): The base title for the subplots (e.g., 'Accumulation').
-            datetime_col (str, optional): The column name containing datetime objects.
-                Defaults to "valid_time".
-            add_logos (bool, optional): Whether to add a custom image/logo below the plot.
-                Defaults to True.
-            fig_height (int, optional): The height (in inches) of each row of subplots. Defaults to 3.
-            xtick_rotation (int, optional): Rotation angle for x-axis tick labels. Defaults to 0.
-            ncols (int, optional): The number of columns in the subplot grid. If 0, it defaults to
+            event_date (datetime, required):
+                The date of the event, used to highlight the current year's data up to this point.
+            labelticks (list[int], required):
+                Day-of-year integers to use as x-axis tick locations.
+            labels (list[any], required):
+                Labels corresponding to `labelticks` (e.g., month abbreviations).
+            days (list[int], required):
+                A list of rolling window sizes (e.g., [3, 7, 14]) corresponding to the data in `rolled_data_list`.
+            title (str, required):
+                The base title for the subplots (e.g., 'Accumulation').
+            datetime_col (str, optional):
+                The column name containing datetime objects. Defaults to "valid_time".
+            add_logos (bool, optional):
+                Whether to add a custom image/logo below the plot. Defaults to True.
+            fig_height (int, optional):
+                The height (in inches) of each row of subplots. Defaults to 3.
+            xtick_rotation (int, optional):
+                Rotation angle for x-axis tick labels. Defaults to 0.
+            ncols (int, optional):
+                The number of columns in the subplot grid. If 0, it defaults to
                 the total number of plots. Defaults to 0.
 
         Returns:
@@ -1129,7 +1282,7 @@ class Plot:
                 - fig: The generated Matplotlib Figure.
                 - ax: The last Matplotlib Axes object used for plotting (or the single Axes if only one plot).
                 - img_ax: The Axes object containing the added logo, or None if `add_logos` is False.
-        """
+        '''
 
         # fig size
         nplots = len(rolled_data_list)
@@ -1214,68 +1367,102 @@ class Plot:
 
 
     @staticmethod
-    def subplot_contours(
-        contour_gdf:gpd.GeoDataFrame, gdf:gpd.GeoDataFrame, value_col:str, contour_col:str,
-        legend_title:str=None, datetime_col:str="valid_time",
-        polygons:list[Polygon]=None, ncols:int=5, figsize:tuple[int,int]=(13,10),
-        cmap:str|None=None, borders:bool=True, coastlines:bool=True, gridlines:bool=True,
-        subtitle:str=None, extends:tuple[float,float,float,float]=None, dpi:int=100,
-        flatten_empty_plots:bool=True, marker:str='s', shared_colorbar:bool=True,
-        add_logos:bool=False, polygon_color:str='cyan', contour_steps:int=200,
-        projection:cartopy.crs=ccrs.PlateCarree(), grid_line_col:str='gray', grid_line_size:float=.4,
-        grid_line_alpha:float=.5
-    ):
-        """Plots daily GeoDataFrame values in a multi-panel grid, overlaid with atmospheric height contours (e.g., Z500).
+    def subplot_contours(contour_gdf:gpd.GeoDataFrame,
+                         gdf:gpd.GeoDataFrame,
+                         value_col:str,
+                         contour_col:str,
+                         legend_title:str=None,
+                         datetime_col:str="valid_time",
+                         polygons:list[Polygon]=None,
+                         ncols:int=5,
+                         figsize:tuple[int,int]=(13,10),
+                         cmap:str|None=None,
+                         borders:bool=True,
+                         coastlines:bool=True,
+                         gridlines:bool=True,
+                         subtitle:str=None,
+                         extends:tuple[float,float,float,float]=None,
+                         dpi:int=100,
+                         flatten_empty_plots:bool=True,
+                         marker:str='s',
+                         shared_colorbar:bool=True,
+                         add_logos:bool=False,
+                         polygon_color:str='cyan',
+                         contour_steps:int=200,
+                         projection:cartopy.crs=ccrs.PlateCarree(),
+                         grid_line_col:str='gray',
+                         grid_line_size:float=.4,
+                         grid_line_alpha:float=.5
+    ) -> tuple[plt.Figure, np.ndarray[plt.Axes]] | tuple[plt.Figure, np.ndarray[plt.Axes], plt.Axes]:
+        '''
+        Plots daily GeoDataFrame values in a multi-panel grid, overlaid with atmospheric height contours (e.g., Z500).
 
         The function groups the point data (`gdf`) and the contour data (`contour_gdf`) by date,
         creating one subplot per day. It uses a custom map projection (Lambert Conformal) centered
         on the data and supports shared or individual colorbars.
 
         Parameters:
-            contour_gdf (gpd.GeoDataFrame): GeoDataFrame containing the contour data (e.g., Z500 heights)
-                on a regular lat/lon grid.
-            gdf (gpd.GeoDataFrame): GeoDataFrame containing the primary point data to be colored.
-            value_col (str): The column in `gdf` whose values determine the color.
-            contour_col (str): The column in `contour_gdf` whose values are used for contours (e.g., 'z').
-            legend_title (str, optional): The title for the shared colorbar. Defaults to the value_col name.
-            datetime_col (str, optional): The column containing date/time information for grouping.
-                Defaults to "valid_time".
-            polygons (list[Polygon], optional): A list of shapely Polygon objects to overlay on the map.
-                Defaults to None.
-            ncols (int, optional): The number of columns in the subplot grid. Defaults to 5.
-            figsize (tuple[int, int], optional): Matplotlib figure size (width, height) in inches.
-                Defaults to (13, 10).
-            cmap (str | None, optional): The desired colormap type (e.g., "t2m", "tp", "anomaly") or a
+            contour_gdf (gpd.GeoDataFrame, required):
+                GeoDataFrame containing the contour data (e.g., Z500 heights) on a regular lat/lon grid.
+            gdf (gpd.GeoDataFrame, required):
+                GeoDataFrame containing the primary point data to be colored.
+            value_col (str, required):
+                The column in `gdf` whose values determine the color.
+            contour_col (str, required):
+                The column in `contour_gdf` whose values are used for contours (e.g., 'z').
+            legend_title (str, optional):
+                The title for the shared colorbar. Defaults to the value_col name.
+            datetime_col (str, optional):
+                The column containing date/time information for grouping. Defaults to "valid_time".
+            polygons (list[Polygon], optional):
+                A list of shapely Polygon objects to overlay on the map. Defaults to None.
+            ncols (int, optional):
+                The number of columns in the subplot grid. Defaults to 5.
+            figsize (tuple[int, int], optional):
+                Matplotlib figure size (width, height) in inches. Defaults to (13, 10).
+            cmap (str | None, optional):
+                The desired colormap type (e.g., "t2m", "tp", "anomaly") or a
                 standard Matplotlib colormap name. Defaults to None (inferred from `value_col`).
-            borders (bool, optional): Whether to draw country borders. Defaults to True.
-            coastlines (bool, optional): Whether to draw coastlines. Defaults to True.
-            gridlines (bool, optional): Whether to draw lat/lon gridlines. Defaults to True.
-            subtitle (str, optional): A main title for the entire figure (suptitle). Defaults to None.
-            extends (tuple[float, float, float, float], optional): The map extent as
-                [lon_min, lon_max, lat_min, lat_max]. Defaults to None (auto-extent).
-            dpi (int, optional): Dots per inch for the figure resolution. Defaults to 100.
-            flatten_empty_plots (bool, optional): If True, hides unused axes at the end of the grid.
-                Defaults to True.
-            marker (str, optional): The marker style for plotting point data. Defaults to 's' (square).
-            shared_colorbar (bool, optional): If True, uses a single colorbar for the whole figure.
-                Defaults to True.
-            add_logos (bool, optional): Whether to add a custom image/logo below the plot.
-                Defaults to False.
-            polygon_color (str, optional): Color for the overlaid polygons. Defaults to 'cyan'.
-            contour_steps (int, optional): The interval between contour lines (e.g., 200 meters for Z500).
-                Defaults to 200.
-            projection (cartopy.crs, optional): The Cartopy CRS for plotting data. Defaults to ccrs.PlateCarree().
-            grid_line_col (str, optional): Color of the gridlines. Defaults to 'gray'.
-            grid_line_size (float, optional): Linewidth of the gridlines. Defaults to 0.4.
-            grid_line_alpha (float, optional): Transparency of the gridlines. Defaults to 0.5.
+            borders (bool, optional):
+                Whether to draw country borders. Defaults to True.
+            coastlines (bool, optional):
+                Whether to draw coastlines. Defaults to True.
+            gridlines (bool, optional):
+                Whether to draw lat/lon gridlines. Defaults to True.
+            subtitle (str, optional):
+                A main title for the entire figure (suptitle). Defaults to None.
+            extends (tuple[float, float, float, float], optional):
+                The map extent as [lon_min, lon_max, lat_min, lat_max]. Defaults to None (auto-extent).
+            dpi (int, optional):
+                Dots per inch for the figure resolution. Defaults to 100.
+            flatten_empty_plots (bool, optional):
+                If True, hides unused axes at the end of the grid. Defaults to True.
+            marker (str, optional):
+                The marker style for plotting point data. Defaults to 's' (square).
+            shared_colorbar (bool, optional):
+                If True, uses a single colorbar for the whole figure. Defaults to True.
+            add_logos (bool, optional):
+                Whether to add a custom image/logo below the plot. Defaults to False.
+            polygon_color (str, optional):
+                Color for the overlaid polygons. Defaults to 'cyan'.
+            contour_steps (int, optional):
+                The interval between contour lines (e.g., 200 meters for Z500). Defaults to 200.
+            projection (cartopy.crs, optional):
+                The Cartopy CRS for plotting data. Defaults to ccrs.PlateCarree().
+            grid_line_col (str, optional):
+                Color of the gridlines. Defaults to 'gray'.
+            grid_line_size (float, optional):
+                Linewidth of the gridlines. Defaults to 0.4.
+            grid_line_alpha (float, optional):
+                Transparency of the gridlines. Defaults to 0.5.
 
         Returns:
-            tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes]] or tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes], matplotlib.axes.Axes]:
+            tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes]] | tuple[matplotlib.figure.Figure, np.ndarray[matplotlib.axes.Axes], matplotlib.axes.Axes]:
                 A tuple containing:
                 - fig: The generated Matplotlib Figure.
                 - axes: A flattened NumPy array of Matplotlib Axes objects for all subplots.
                 - img_ax: The Axes object containing the added logo (only returned if `add_logos` is True).
-        """
+        '''
 
         # set cmap type
         cmap = cmap if cmap else value_col
@@ -1426,37 +1613,42 @@ class Plot:
         fontsize: int = 8,
         figsize=(10, 10),
         extra_polygons: list[Polygon] = None
-    ):
-        """Plots Köppen–Geiger climate classifications for a selected region and polygons.
+    ) -> tuple[plt.Figure, plt.Axes]:
+        '''
+        Plots Köppen–Geiger climate classifications for a selected region and polygons.
 
         The function subsets the climate data based on the provided coordinates, plots the
         classified climate as a background raster, overlays the input polygons (and optionally
         extra/original polygons), and includes a custom, grouped Köppen-Geiger legend at the bottom.
 
         Parameters:
-            kg_da (xr.DataArray): The Xarray DataArray containing the Köppen–Geiger codes (raster data).
-            polygons (list[Polygon]): A list of shapely Polygon objects representing the primary
-                region(s) to be highlighted/outlined (e.g., the final, filtered region).
-            coords (list[list[float]]): A list of [longitude, latitude] pairs that define the overall
+            kg_da (xr.DataArray, required):
+                The Xarray DataArray containing the Köppen–Geiger codes (raster data).
+            polygons (list[Polygon], required):
+                A list of shapely Polygon objects representing the primary region(s)
+                to be highlighted/outlined (e.g., the final, filtered region).
+            coords (list[list[float]], required):
+                A list of [longitude, latitude] pairs that define the overall
                 bounding box for the plot extent and raster subsetting.
-            legend_path (str): The file path to the CSV or text file containing the Köppen–Geiger
+            legend_path (str, required):
+                The file path to the CSV or text file containing the Köppen–Geiger
                 legend mapping (codes, names, and RGB colors).
-            projection (cartopy.crs, optional): The Cartopy coordinate reference system for the map.
-                Defaults to ccrs.PlateCarree().
-            fontsize (int, optional): Base font size for plot elements, including the legend.
-                Defaults to 8.
-            figsize (tuple, optional): Matplotlib figure size (width, height) in inches.
-                Defaults to (10, 10).
-            extra_polygons (list[Polygon], optional): A list of additional polygons to plot, typically
-                representing the original, unfiltered region. These are filled and outlined in green
-                (green fill, green line). Defaults to None.
+            projection (cartopy.crs, optional):
+                The Cartopy coordinate reference system for the map. Defaults to ccrs.PlateCarree().
+            fontsize (int, optional):
+                Base font size for plot elements, including the legend. Defaults to 8.
+            figsize (tuple, optional):
+                Matplotlib figure size (width, height) in inches. Defaults to (10, 10).
+            extra_polygons (list[Polygon], optional):
+                A list of additional polygons to plot, typically representing the original, unfiltered region.
+                These are filled and outlined in green (green fill, green line). Defaults to None.
 
         Returns:
             tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
                 A tuple containing:
                 - fig: The generated Matplotlib Figure.
                 - ax: The Matplotlib Axes object with the climate map.
-        """
+        '''
         
         kg_legend = KoppenGeiger.load_kg_legend(legend_path)
         kg_da_masked = kg_da.where(kg_da >= 1)
@@ -1498,16 +1690,50 @@ class Plot:
             title_fontsize=fontsize + 1
         )
 
-
         KoppenGeiger.draw_koppen_legend(fig, kg_legend)
 
         return fig, ax
     
     @staticmethod
-    def plot_seasonal_cycles(seasonal_cycles, obs_seasonal_cycle, value_col:str,
-                          legend_title:str=None, cmap:str=None, add_logos:bool=True,
-                          projection:cartopy.crs=ccrs.PlateCarree(), dpi:int=100,
-                          subtitle:bool=True):
+    def plot_seasonal_cycles(seasonal_cycles:dict,
+                             obs_seasonal_cycle:xr.Dataset,
+                             value_col:str,
+                             legend_title:str|None=None,
+                            #  cmap:str=None,
+                             add_logos:bool=True,
+                            #  projection:cartopy.crs=ccrs.PlateCarree(),
+                            #  dpi:int=100,
+                             subtitle:bool=True
+                             ) -> tuple[plt.Figure, plt.Axes, plt.Axes | None]:
+        '''
+        Plots seasonal cycles for multiple models alongside observational data.
+        Each subplot displays the seasonal cycle of a specific model compared to
+        the ERA5 observational seasonal cycle.
+
+        Parameters:
+            seasonal_cycles (dict, required):
+                A dictionary where keys are model names and values are xarray DataArrays
+                containing the seasonal cycle data for each model.
+            obs_seasonal_cycle (xarray.Dataset, required):
+                An xarray Dataset containing the observational seasonal cycle data (ERA5).
+            value_col (str, required):
+                The variable name/column in the datasets to plot (e.g., 't2m', 'tp').
+            legend_title (str | None, optional):
+                The title for the overall figure legend. Defaults to None.
+            add_logs (bool, optional):
+                Whether to add a custom image/logo below the plot. Defaults to True.
+            subtitle (bool, optional):
+                Whether to add a subtitle to the figure. Defaults to True.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, matplotlib.axes.Axes | None]:
+                A tuple containing:
+                - fig: The generated Matplotlib Figure.
+                - ax: The Matplotlib Axes object with the seasonal cycle plots.
+                - img_ax: The Axes object containing the added logo, or None if `add_logos` is False.
+
+        
+        '''
 
         n_models = len(seasonal_cycles)
         fig, axs, axs_flat, nrows, ncols = Plot.create_grid(n_models, sharex=True, sharey=True)
@@ -1547,14 +1773,49 @@ class Plot:
     
 
     @staticmethod
-    def plot_spatial_maps(
-        obs, spatial_maps, value_col:str, legend_title:str=None, ncols:int=4, cmap:str=None, borders:bool=True, coastlines:bool=True, 
-        gridlines:bool=True, projection:cartopy.crs=ccrs.PlateCarree(), dpi:int=100, 
-        add_logos:bool=True
-    ):
-        """
+    def plot_spatial_maps(obs:xr.Dataset,
+                          spatial_maps:dict,
+                          value_col:str,
+                          legend_title:str|None=None,
+                          ncols:int=4,
+                          cmap:str|None=None,
+                        #   borders:bool=True,
+                        #   coastlines:bool=True,
+                        #   gridlines:bool=True,
+                          projection:cartopy.crs=ccrs.PlateCarree(),
+                        #   dpi:int=100,
+                          add_logos:bool=True
+    ) -> tuple[plt.Figure, plt.Axes, plt.Axes | None]:
+        '''
         Plots ERA5 (obs) in the top-left corner and CORDEX models in subsequent rows.
-        """
+
+        Parameters:
+            obs (xarray.Dataset, required):
+                The xarray Dataset containing the observational data (ERA5).
+            spatial_maps(dict, required):
+                A dictionary where keys are model names and values are xarray DataArrays
+                containing the spatial map data for each model.
+            value_col (str, required):
+                The variable name/column in the datasets to plot (e.g., 't2m', 'tp').
+            legend_title (str | None, optional):
+                The title for the overall figure legend. Defaults to None.
+            ncols (int, optional):
+                The number of columns in the subplot grid. Defaults to 4.
+            cmap (str | matplotlib.colors.Colormap | None, optional):
+                The desired colormap type (e.g., "t2m", "tp", "anomaly") or a
+                standard Matplotlib colormap name. Defaults to None (inferred from `value_col`).
+            projection (cartopy.crs, optional);
+                The Cartopy coordinate reference system for the map. Defaults to ccrs.PlateCarree().
+            add_logos (bool, optional);
+                Whether to add a custom image/logo below the plot. Defaults to True.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, matplotlib.axes.Axes | None]:
+                A tuple containing:
+                - fig: The generated Matplotlib Figure.
+                - ax: The Matplotlib Axes object with the spatial maps.
+                - img_ax: The Axes object containing the added logo, or None if `add_logos` is False.
+        '''
 
         cmap = cmap if cmap else value_col
         n_models = len(spatial_maps)
@@ -1665,7 +1926,18 @@ class Plot:
             return fig, axs_flat, None
 
     @staticmethod
-    def month_ticks():
+    def month_ticks() -> tuple[list[int], list[str], pd.DatetimeIndex]:
+        '''
+        Generates tick positions and labels for months based on the 15th day of each month.
+
+        Returns:
+            tuple[list[int], list[str], pd.DatetimeIndex];
+                A tuple containing:
+                - ticks: A list of day-of-year integers representing the 15th of each month.
+                - labels: A list of single-character month abbreviations corresponding to the ticks.
+                - days: A Pandas DatetimeIndex covering the full year from Jan 1 to Dec 31.
+        '''
+
         import pandas as pd
         days = pd.date_range(start="2020-01-01", end="2021-01-01")
         ticks = [i for i in range(365) if days[i].day == 15]
@@ -1674,9 +1946,9 @@ class Plot:
     
     @staticmethod
     def create_grid(n_panels, ncols=4, projection=None, sharex=False, sharey=False):
-        """
+        '''
         Creates a grid of subplots based on the number of panels required.
-        """
+        '''
         nrows = int(np.ceil(n_panels / ncols))
         if n_panels < ncols:
             ncols = n_panels
@@ -1709,10 +1981,10 @@ class Plot:
         add_logos: bool = True,
         subtitle: bool = True
     ):
-        """
+        '''
         Plots a grid comparing rolling window statistics of models vs observations with Confidence Intervals.
         Reuses create_grid and adds logos.
-        """
+        '''
 
         n_models = len(model_dfs)
 
@@ -1812,7 +2084,8 @@ class KoppenGeiger:
 
     @staticmethod
     def load_kg_legend(path):
-        """Loads the Köppen–Geiger climate classification legend from a text file.
+        '''
+        Loads the Köppen–Geiger climate classification legend from a text file.
 
         The legend file is expected to have a specific format (e.g., '1: Af Tropical rainforest [102 0 0]'),
         which is parsed using a regular expression to extract the classification code, class abbreviation,
@@ -1824,7 +2097,7 @@ class KoppenGeiger:
         Returns:
             pd.DataFrame: A DataFrame with columns 'code' (int), 'class' (str), 'description' (str),
                 and 'rgb' (tuple of normalized floats).
-        """
+        '''
         rows = []
         pattern = re.compile(r"^\s*(\d+):\s+(\w+)\s+(.*?)\s+\[(.*?)\]")
 
@@ -1842,7 +2115,8 @@ class KoppenGeiger:
 
     @staticmethod
     def draw_koppen_legend(fig, kg_legend, fontsize=8):
-        """Draws a custom, grouped Köppen-Geiger climate classification legend onto a Matplotlib figure.
+        '''
+        Draws a custom, grouped Köppen-Geiger climate classification legend onto a Matplotlib figure.
 
         The legend is placed in an inset Axes at the bottom of the figure, organized into main
         climate categories (Tropical, Arid, Temperate, Cold, Polar) across four columns.
@@ -1857,7 +2131,7 @@ class KoppenGeiger:
 
         Returns:
             matplotlib.axes.Axes: The newly created Axes object containing the legend.
-        """
+        '''
         
         KG_GROUPS = {
             "Tropical": [1,2,3],

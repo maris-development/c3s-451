@@ -11,6 +11,8 @@ import base64
 from io import BytesIO
 from .plot import *
 import os
+import warnings
+
 
 class Utils:
     """Utility class for various geospatial & temporal data operations, including region selection and data manipulation, splitting time ranges, etc."""
@@ -46,7 +48,7 @@ class Utils:
         end: datetime,
         months: list[str]|list[int]
     ) -> list[tuple[datetime, datetime]]:
-        """
+        '''
         Split a time range into sub-ranges filtered by specific months.
 
         This helper method iterates through the time period between start and end,
@@ -65,7 +67,7 @@ class Utils:
         Returns:
             list[tuple[datetime, datetime]]: A list of time ranges as tuples of 
             (start_date, end_date) defining the periods within the specified months.
-        """
+        '''
         result = []
 
         def last_day_of_month(dt: datetime) -> datetime:
@@ -98,7 +100,7 @@ class Utils:
         start: datetime,
         end: datetime
     ) -> list[tuple[datetime, datetime]]:
-        """
+        '''
         Split a time range into sub-ranges, each within a single calendar year.
 
         This helper method takes a start and end datetime and breaks the interval
@@ -115,7 +117,7 @@ class Utils:
         Returns:
             (list[tuple[datetime, datetime]]):
                 A list of (start, end) tuples, where each tuple represents a period contained within one calendar year.
-        """
+        '''
         ranges = []
         current_start = start
         # iterate until within same year as end
@@ -130,7 +132,8 @@ class Utils:
     @staticmethod
     def select_region(regionType:str, bbox:tuple[float, float, float, float]|None=None,
                     overlays:dict[str, str]|None=None, params:Dict[str, Any]=None):
-        """Initiates a web-based geographical region selection tool and retrieves the selected polygon.
+        '''
+        Initiates a web-based geographical region selection tool and retrieves the selected polygon.
 
         This method starts the Copernicus Event Attribution Region Picker service for a specified
         type of geographical unit ('wraf' or 'hydrobasin'). It opens a URL in the user's browser,
@@ -154,7 +157,7 @@ class Utils:
         Raises:
             ValueError:
                 If an invalid `regionType` is provided.
-        """
+        '''
         
         params = params if params else {}
 
@@ -223,7 +226,8 @@ class Utils:
 
     @staticmethod
     def wrap_lon(ds):
-        """Wraps longitude coordinates from the 0° to 360° range to the standard -180° to 180° range.
+        '''
+        Wraps longitude coordinates from the 0° to 360° range to the standard -180° to 180° range.
 
         This function detects longitude coordinates (named either 'longitude' or 'lon') and transforms
         them if any value exceeds 180°. It then re-indexes the dataset to ensure the coordinates
@@ -236,7 +240,7 @@ class Utils:
         Returns:
             xarray.Dataset|xarray.DataArray: The dataset with longitudes wrapped to -180° to 180°
                 and sorted coordinates.
-        """
+        '''
         if "longitude" in ds.coords:
             lon = "longitude"
             lat = "latitude"
@@ -263,7 +267,8 @@ class Utils:
         and their defining points for bounding box calculations.
 
         Parameters:
-            data (dict): A GeoJSON-like dictionary object, expected to have a structure with
+            data (dict):
+                A GeoJSON-like dictionary object, expected to have a structure with
                 `"features"`, where each feature contains a `"geometry"` with `"coordinates"`
                 defining a polygon exterior ring.
 
@@ -287,30 +292,40 @@ class Utils:
 
     @staticmethod
     def get_base_fig(date, gdf, value_col:str, datetime_col:str='valid_time', dpi:int=100, cmap=None, projection=ccrs.PlateCarree(), show_fig:bool=False, marker:str='s'):
-        """Generates a base map figure for a single day's data and returns it as a base64-encoded PNG image string.
+        '''
+        Generates a base map figure for a single day's data and returns it as a base64-encoded PNG image string.
 
         This function is intended to create a visual overlay for use in a web context (like a region picker tool).
         It subsets the GeoDataFrame for a specific date, applies a determined colormap/normalization,
         plots the data, and returns the figure output as a string instead of saving it to a file.
 
         Parameters:
-            date (datetime.date or str): The specific date for which to subset and plot the data.
-            gdf (gpd.GeoDataFrame): The GeoDataFrame containing the time series data.
-            value_col (str): The column name containing the values to color the plot.
-            datetime_col (str, optional): The column name containing datetime objects for filtering.
-                Defaults to 'valid_time'.
-            dpi (int, optional): Dots per inch for the figure resolution. Defaults to 100.
-            cmap (str, optional): The colormap identifier (e.g., 't2m', 'tp', 'anomaly') or a standard
+            date (datetime.date or str):
+                The specific date for which to subset and plot the data.
+            gdf (gpd.GeoDataFrame):
+                The GeoDataFrame containing the time series data.
+            value_col (str):
+                The column name containing the values to color the plot.
+            datetime_col (str):
+                The column name containing datetime objects for filtering. Defaults to 'valid_time'.
+            dpi (int):
+                Dots per inch for the figure resolution. Defaults to 100.
+            cmap (str):
+                The colormap identifier (e.g., 't2m', 'tp', 'anomaly') or a standard 
                 Matplotlib colormap name. Defaults to None (inferred from `value_col`).
-            projection (cartopy.crs, optional): The Cartopy projection for the map. Defaults to ccrs.PlateCarree().
-            show_fig (bool, optional): If True, the Matplotlib figure is kept open and displayed (useful for
+            projection (cartopy.crs):
+                The Cartopy projection for the map. Defaults to ccrs.PlateCarree().
+            show_fig (bool):
+                If True, the Matplotlib figure is kept open and displayed (useful for
                 debugging). If False, the figure is closed after encoding. Defaults to False.
-            marker (str, optional): The marker style to use for plotting point data. Points are converted
+            marker (str):
+                The marker style to use for plotting point data. Points are converted
                 to small squares/polygons for raster-like appearance. Defaults to 's' (square).
 
         Returns:
-            str: A base64-encoded PNG image string of the generated plot.
-        """
+            str:
+                A base64-encoded PNG image string of the generated plot.
+        '''
 
         selected_gdf_anomoly = gdf[(gdf[datetime_col] >= date) & (gdf[datetime_col] <= date)]
 
@@ -361,20 +376,25 @@ class Utils:
 
     @staticmethod
     def add_doy_column(gdf, datetime_col:str, doy_col:str='doy') -> gpd.GeoDataFrame:   
-        """Adds a column to the GeoDataFrame representing the day of the year.
+        '''
+        Adds a column to the GeoDataFrame representing the day of the year.
 
         The function ensures the specified datetime column is in datetime format and extracts
         the day number into a new column.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame.
-            datetime_col (str): The column name containing datetime objects.
-            doy_col (str, optional): The name of the new column to hold the day of the year
+            gdf (gpd.GeoDataFrame):
+                The input GeoDataFrame.
+            datetime_col (str):
+                The column name containing datetime objects.
+            doy_col (str):
+                The name of the new column to hold the day of the year
                 (labeled as 'doy' in the code, but extracting day number). Defaults to 'doy'.
 
         Returns:
-            gpd.GeoDataFrame: A copy of the input GeoDataFrame with the new day-of-year column added.
-        """
+            gpd.GeoDataFrame:
+                A copy of the input GeoDataFrame with the new day-of-year column added.
+        '''
         gdf = gdf.copy()
 
         gdf[datetime_col] = pd.to_datetime(gdf[datetime_col])
@@ -384,17 +404,21 @@ class Utils:
 
     @staticmethod
     def add_month_column(gdf, datetime_col:str, month_col:str='month') -> gpd.GeoDataFrame:  
-        """Adds a column to the GeoDataFrame representing the month number (1-12) extracted from a datetime column.
+        '''
+        Adds a column to the GeoDataFrame representing the month number (1-12) extracted from a datetime column.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame.
-            datetime_col (str): The column name containing datetime objects.
-            month_col (str, optional): The name of the new column to hold the month number.
-                Defaults to 'month'.
+            gdf (gpd.GeoDataFrame):
+                The input GeoDataFrame.
+            datetime_col (str):
+                The column name containing datetime objects.
+            month_col (str, optional):
+                The name of the new column to hold the month number. Defaults to 'month'.
 
         Returns:
-            gpd.GeoDataFrame: A copy of the input GeoDataFrame with the new month number column added.
-        """ 
+            gpd.GeoDataFrame:
+                A copy of the input GeoDataFrame with the new month number column added.
+        ''' 
         gdf = gdf.copy()
 
         gdf[datetime_col] = pd.to_datetime(gdf[datetime_col])
@@ -404,20 +428,23 @@ class Utils:
 
     @staticmethod
     def add_year_column(gdf, datetime_col:str, year_col:str='year', drop_datetime_col:bool=False) -> gpd.GeoDataFrame:  
-        """Adds a column to the GeoDataFrame representing the year extracted from a datetime column.
+        '''
+        Adds a column to the GeoDataFrame representing the year extracted from a datetime column.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame.
-            datetime_col (str): The column name containing datetime objects.
-            year_col (str, optional): The name of the new column to hold the year.
-                Defaults to 'year'.
-            drop_datetime_col (bool, optional): If True, the original datetime column is dropped
-                from the returned DataFrame. Defaults to False.
+            gdf (gpd.GeoDataFrame):
+                The input GeoDataFrame.
+            datetime_col (str):
+                The column name containing datetime objects.
+            year_col (str):
+                The name of the new column to hold the year. Defaults to 'year'.
+            drop_datetime_col (bool):
+                If True, the original datetime column is dropped from the returned DataFrame. Defaults to False.
 
         Returns:
-            gpd.GeoDataFrame: A copy of the input GeoDataFrame with the new year column added
-                (and optionally the datetime column dropped).
-        """
+            gpd.GeoDataFrame:
+                A copy of the input GeoDataFrame with the new year column added (and optionally the datetime column dropped).
+        '''
         gdf = gdf.copy()
 
         gdf[datetime_col] = pd.to_datetime(gdf[datetime_col])
@@ -430,68 +457,84 @@ class Utils:
 
     @staticmethod
     def select_study_region_gdf(gdf:gpd.GeoDataFrame, study_region:gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Selects the subset of a GeoDataFrame that falls within the boundaries of a specified study region geometry.
+        '''
+        Selects the subset of a GeoDataFrame that falls within the boundaries of a specified study region geometry.
         
         Parameters:
-            gdf (gpd.GeoDataFrame): The GeoDataFrame containing the data to be clipped (e.g., climate observations).
-            study_region (gpd.GeoDataFrame): The GeoDataFrame defining the boundary of the region of interest
+            gdf (gpd.GeoDataFrame):
+                The GeoDataFrame containing the data to be clipped (e.g., climate observations).
+            study_region (gpd.GeoDataFrame):
+                The GeoDataFrame defining the boundary of the region of interest
                 (expected to contain one or more polygon geometries).
 
         Returns:
-            gpd.GeoDataFrame: A new GeoDataFrame containing only the features from `gdf` that overlap
+            gpd.GeoDataFrame:
+                A new GeoDataFrame containing only the features from `gdf` that overlap
                 with the geometry in `study_region`.
-        """
+        '''
         return gpd.overlay(gdf, study_region, how='intersection')
 
     @staticmethod
     def select_date_range_gdf(gdf:gpd.GeoDataFrame, datetime_col:str, time_range:tuple[datetime, datetime]) -> gpd.GeoDataFrame:
-        """Filters a GeoDataFrame to retain only the rows where the datetime column falls within a specified inclusive range.
+        '''
+        Filters a GeoDataFrame to retain only the rows where the datetime column falls within a specified inclusive range.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame containing time-series data.
-            datetime_col (str): The column name in `gdf` containing datetime objects used for filtering.
-            time_range (tuple[datetime, datetime]): A tuple specifying the start and end of the
-                desired time period, i.e., (start_datetime, end_datetime).
+            gdf (gpd.GeoDataFrame):
+                The input GeoDataFrame containing time-series data.
+            datetime_col (str):
+                The column name in `gdf` containing datetime objects used for filtering.
+            time_range (tuple[datetime, datetime]):
+                A tuple specifying the start and end of the desired time period, i.e., (start_datetime, end_datetime).
 
         Returns:
-            gpd.GeoDataFrame: A new GeoDataFrame containing only the data within the specified time range.
-        """
+            gpd.GeoDataFrame:
+                A new GeoDataFrame containing only the data within the specified time range.
+        '''
         return gdf[(gdf[datetime_col] >= time_range[0]) & (gdf[datetime_col] <= time_range[1])]
 
     @staticmethod
     def select_year_gdf(gdf: gpd.GeoDataFrame, datetime_col: str, year_range: tuple[int, int]) -> gpd.GeoDataFrame:
-        """Filters a GeoDataFrame to retain only the rows whose datetime column falls within a specified range of years.
+        '''
+            Filters a GeoDataFrame to retain only the rows whose datetime column falls within a specified range of years.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame containing time-series data.
-            datetime_col (str): The column name in `gdf` containing datetime objects used for filtering.
-            year_range (tuple[int, int]): A tuple specifying the start and end of the
-                desired year period, i.e., (start_year, end_year). The range is inclusive.
+            gdf (gpd.GeoDataFrame):
+                The input GeoDataFrame containing time-series data.
+            datetime_col (str):
+                The column name in `gdf` containing datetime objects used for filtering.
+            year_range (tuple[int, int]):
+                A tuple specifying the start and end of the desired year period, i.e., (start_year, end_year). The range is inclusive.
 
         Returns:
-            gpd.GeoDataFrame: A new GeoDataFrame containing only the data within the specified year range.
-        """
+            gpd.GeoDataFrame:
+                A new GeoDataFrame containing only the data within the specified year range.
+        '''
         gdf[datetime_col] = pd.to_datetime(gdf[datetime_col])
         years = gdf[datetime_col].dt.year
         return gdf[(years >= year_range[0]) & (years <= year_range[1])]
 
     @staticmethod
     def select_month_gdf(gdf:gpd.GeoDataFrame, datetime_col:str, month_range:tuple[int, int]) -> gpd.GeoDataFrame:
-        """Filters a GeoDataFrame to retain only the rows whose datetime column falls within a specified range of months.
+        '''
+        Filters a GeoDataFrame to retain only the rows whose datetime column falls within a specified range of months.
 
         This function correctly handles ranges that cross the year boundary (e.g., December to February). For cross-year
         ranges, months in the second part of the range are temporarily shifted back one year to enable
         correct chronological filtering, though the original date values remain chronologically correct.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame containing time-series data.
-            datetime_col (str): The column name in `gdf` containing datetime objects used for filtering.
-            month_range (tuple[int, int]): A tuple specifying the start month and end month as integers (1-12),
-                i.e., (start_month, end_month).
+            gdf (gpd.GeoDataFrame):
+                The input GeoDataFrame containing time-series data.
+            datetime_col (str):
+                The column name in `gdf` containing datetime objects used for filtering.
+            month_range (tuple[int, int]):
+                A tuple specifying the start month and end month as integers (1-12), i.e., (start_month, end_month).
 
         Returns:
-            gpd.GeoDataFrame: A new GeoDataFrame containing only the data within the specified month range.
-        """
+            gpd.GeoDataFrame:
+                A new GeoDataFrame containing only the data within the specified month range.
+        '''
         gdf[datetime_col] = pd.to_datetime(gdf[datetime_col])
 
         months = gdf[datetime_col].dt.month
@@ -510,21 +553,25 @@ class Utils:
 
     @staticmethod
     def select_doy_gdf(gdf:gpd.GeoDataFrame, datetime_col:str, doy_range:tuple[int, int]) -> gpd.GeoDataFrame:
-        """Filters a GeoDataFrame to retain only the rows whose datetime column falls within a specified range of days of the year (DOY).
+        '''
+        Filters a GeoDataFrame to retain only the rows whose datetime column falls within a specified range of days of the year (DOY).
 
         This function correctly handles ranges that cross the year boundary (e.g., DOY 350 to DOY 10). For cross-year
         ranges, dates in the second part of the range are temporarily shifted back one year to enable
         correct chronological filtering, although the original date values remain chronologically correct.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame containing time-series data.
-            datetime_col (str): The column name in `gdf` containing datetime objects used for filtering.
-            doy_range (tuple[int, int]): A tuple specifying the start and end of the
-                desired day-of-year period, i.e., (start_doy, end_doy).
+            gdf (gpd.GeoDataFrame):
+                The input GeoDataFrame containing time-series data.
+            datetime_col (str):
+                The column name in `gdf` containing datetime objects used for filtering.
+            doy_range (tuple[int, int]):
+                A tuple specifying the start and end of the desired day-of-year period, i.e., (start_doy, end_doy).
 
         Returns:
-            gpd.GeoDataFrame: A new GeoDataFrame containing only the data within the specified DOY range.
-        """
+            gpd.GeoDataFrame:
+                A new GeoDataFrame containing only the data within the specified DOY range.
+        '''
         
         gdf[datetime_col] = pd.to_datetime(gdf[datetime_col])
 
@@ -547,61 +594,75 @@ class Utils:
                 doy_range:tuple[int, int]|None=None,
                 study_region:gpd.GeoDataFrame|None=None
                 ) -> gpd.GeoDataFrame:
-        """Creates a subset of a GeoDataFrame by applying various spatio-temporal filters.
+        '''
+        Creates a subset of a GeoDataFrame by applying various spatio-temporal filters.
 
         This function sequentially filters the input GeoDataFrame based on date range, year range,
         month range, day-of-year range, and spatial intersection with a study region geometry.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame to be filtered.
-            datetime_col (str | None, optional): The name of the datetime column used for all
-                temporal filtering options. Must be provided if any temporal filter is used.
+            gdf (gpd.GeoDataFrame, required):
+                The input GeoDataFrame to be filtered.
+            datetime_col (str | None, optional):
+                The name of the datetime column used for all temporal filtering options.
+                Must be provided if any temporal filter is used. Defaults to None.
+            date_range (tuple[datetime, datetime] | None, optional):
+                Filters data by an exact start and end datetime. Defaults to None.
+            year_range (tuple[int, int] | None, optional):
+                Filters data to a range of years (inclusive). Defaults to None.
+            month_range (tuple[int, int] | None, optional):
+                Filters data to a range of months, correctly handling cross-year spans (e.g., Nov-Mar).
                 Defaults to None.
-            date_range (tuple[datetime, datetime] | None, optional): Filters data by an exact
-                start and end datetime. Defaults to None.
-            year_range (tuple[int, int] | None, optional): Filters data to a range of years (inclusive).
-                Defaults to None.
-            month_range (tuple[int, int] | None, optional): Filters data to a range of months,
-                correctly handling cross-year spans (e.g., Nov-Mar). Defaults to None.
-            doy_range (tuple[int, int] | None, optional): Filters data to a range of days-of-year (DOY),
-                correctly handling cross-year spans (e.g., DOY 350 to DOY 10). Defaults to None.
-            study_region (gpd.GeoDataFrame | None, optional): Filters data by spatial intersection
-                with the geometry in this GeoDataFrame. Defaults to None.
+            doy_range (tuple[int, int] | None, optional):
+                Filters data to a range of days-of-year (DOY), correctly handling cross-year spans (e.g., DOY 350 to DOY 10). Defaults to None.
+            study_region (gpd.GeoDataFrame | None, optional):
+                Filters data by spatial intersection with the geometry in this GeoDataFrame. Defaults to None.
 
         Returns:
-            gpd.GeoDataFrame: The filtered GeoDataFrame containing the subset of data.
-        """
+            gpd.GeoDataFrame:
+                The filtered GeoDataFrame containing the subset of data.
+        '''
         gdf = gdf.copy()
 
         if datetime_col is not None:
             if date_range is not None:
                 gdf = Utils.select_date_range_gdf(gdf, datetime_col=datetime_col, time_range=date_range)
+                if gdf.empty: warnings.warn("The resulting GeoDataFrame is empty after applying the `date_range` filter.", stacklevel=2)
             if year_range is not None:
                 gdf = Utils.select_year_gdf(gdf, datetime_col=datetime_col, year_range=year_range)
+                if gdf.empty: warnings.warn("The resulting GeoDataFrame is empty after applying the `year_range` filter.", stacklevel=2)
             if month_range is not None:
                 gdf = Utils.select_month_gdf(gdf, datetime_col=datetime_col, month_range=month_range)
+                if gdf.empty: warnings.warn("The resulting GeoDataFrame is empty after applying the `month_range` filter.", stacklevel=2)
             if doy_range is not None:
                 gdf = Utils.select_doy_gdf(gdf, datetime_col=datetime_col, doy_range=doy_range)
+                if gdf.empty: warnings.warn("The resulting GeoDataFrame is empty after applying the `doy_range` filter.", stacklevel=2)
 
         if study_region is not None:
             gdf = Utils.select_study_region_gdf(gdf, study_region)
-        
+            if gdf.empty: 
+                warnings.warn(message="The resulting GeoDataFrame is empty after applying the `studyregion` filter.", stacklevel=2)
+
         return gdf
 
     @staticmethod
-    def shift_datetime_by_months(gdf:gpd.GeoDataFrame, datetime_col:str, shift_by:int, direction:str='forward') -> gpd.GeoDataFrame:
-        """Shifts the datetime values in a specified column forward or backward by a given number of months.
+    def shift_datetime_by_months(gdf:gpd.GeoDataFrame, shift_by:int, datetime_col:str='valid_time', direction:str='forward') -> gpd.GeoDataFrame:
+        '''
+        Shifts the datetime values in a specified column forward or backward by a given number of months.
 
         Parameters:
-            gdf (gpd.GeoDataFrame): The input GeoDataFrame.
-            datetime_col (str): The column name containing datetime objects to be shifted.
-            shift_by (int): The number of months by which to shift the dates.
-            direction (str, optional): The direction of the shift. Must be 'forward' (increase date)
-                or 'backward' (decrease date). Defaults to 'forward'.
+            gdf (gpd.GeoDataFrame, required):
+                The input GeoDataFrame.
+            shift_by (int, required):
+                The number of months by which to shift the dates.
+            datetime_col (str, optional):
+                The column name containing datetime objects to be shifted.
+            direction (str, optional):
+                The direction of the shift. Must be 'forward' (increase date) or 'backward' (decrease date). Defaults to 'forward'.
 
         Returns:
             gpd.GeoDataFrame: A copy of the input GeoDataFrame with the datetime column shifted.
-        """
+        '''
         direction = 1 if direction == 'forward' else -1 if direction == 'backward' else 0
 
         gdf = gdf.copy()
@@ -613,20 +674,24 @@ class Utils:
 
     @staticmethod
     def get_value_col(parameter:str) -> str:
-        """Maps a full parameter name to its corresponding simplified column name used within a dataset.
+        '''
+        Maps a full parameter name to its corresponding simplified column name used within a dataset.
 
         This function supports mapping common meteorological parameters (like temperature types and
         precipitation) to their abbreviated column identifiers (e.g., 't2m' or 'tp').
 
         Parameters:
-            parameter (str): The descriptive name of the meteorological parameter (e.g., 'Tmean', 'Precipitation').
+            parameter (str, required):
+                The descriptive name of the meteorological parameter (e.g., 'Tmean', 'Precipitation').
 
         Returns:
-            str: The abbreviated column name (e.g., 't2m', 'tp').
+            str:
+                The abbreviated column name (e.g., 't2m', 'tp').
 
         Raises:
-            ValueError: If the provided parameter name is not supported.
-        """
+            ValueError:
+                If the provided parameter name is not supported.
+        '''
         match(parameter):
             case 'Tmean' | 'Tmin' | 'Tmax':
                 return 't2m'
@@ -637,28 +702,35 @@ class Utils:
 
 
     @staticmethod
-    def get_seasonal_cycle_plot_values(data:gpd.GeoDataFrame, datetime_col:str='valid_time', month_range:tuple[int, int]=(1,12)):
-        """Prepares a GeoDataFrame for seasonal cycle plotting by adjusting datetime values for correct chronological ordering across month boundaries.
+    def get_seasonal_cycle_plot_values(data:gpd.GeoDataFrame, datetime_col:str='valid_time',
+                                       month_range:tuple[int, int]=(1,12)
+                                       ) -> tuple[gpd.GeoDataFrame, pd.Index[str], pd.DatetimeIndex]:
+        '''
+        Prepares a GeoDataFrame for seasonal cycle plotting by adjusting datetime values for correct chronological ordering across month boundaries.
 
         This is crucial for visualizing data that spans across the year boundary (e.g., a winter season from October to March).
         It also generates the appropriate x-axis tick labels and locations for monthly plotting.
 
         Parameters:
-            data (gpd.GeoDataFrame): The input GeoDataFrame containing time-series data.
-            datetime_col (str, optional): The column name in `data` containing the datetime objects.
-                Defaults to 'valid_time'.
-            month_range (tuple[int, int], optional): The start and end month numbers (1-12) defining
-                the seasonal cycle. This is used to determine if a year-end wrap-around adjustment is needed.
-                Defaults to (1, 12).
+            data (gpd.GeoDataFrame, required):
+                The input GeoDataFrame containing time-series data.
+            datetime_col (str, optional):
+                The column name in `data` containing the datetime objects. Defaults to 'valid_time'.
+            month_range (tuple[int, int], optional):
+                The start and end month numbers (1-12) defining the seasonal cycle.
+                This is used to determine if a year-end wrap-around adjustment is needed. Defaults to (1, 12).
 
         Returns:
             tuple[gpd.GeoDataFrame, list[str], pd.DatetimeIndex]:
                 A tuple containing:
-                - plot_df: A copy of the input DataFrame with a new 'plot_time' column containing adjusted
-                datetime values for correct chronological plotting (especially for cross-year ranges).
-                - labels: A list of short month names (e.g., 'Jan', 'Feb') for x-axis tick labels.
-                - labelticks: A DatetimeIndex of the first day of each month for x-axis tick locations.
-        """
+                    - plot_df:
+                        A copy of the input DataFrame with a new 'plot_time' column containing adjusted
+                        datetime values for correct chronological plotting (especially for cross-year ranges).
+                    - labels:
+                        A list of short month names (e.g., 'Jan', 'Feb') for x-axis tick labels.
+                    - labelticks:
+                        A DatetimeIndex of the first day of each month for x-axis tick locations.
+        '''
         plot_df = data.copy()
         plot_df[datetime_col] = pd.to_datetime(plot_df[datetime_col])
         plot_df["plot_time"] = plot_df[datetime_col]
@@ -695,59 +767,39 @@ class Utils:
 
     @staticmethod
     def convert_bbox(south: float, west: float, north: float, east: float) -> tuple:
-        """Converts a bounding box defined in (South, West, North, East) order to the standard geospatial format (min_lon, min_lat, max_lon, max_lat).
+        '''
+        Converts a bounding box defined in (South, West, North, East) order to the standard geospatial format (min_lon, min_lat, max_lon, max_lat).
 
         Parameters:
-            south (float): Southern boundary (minimum latitude).
-            west (float): Western boundary (minimum longitude).
-            north (float): Northern boundary (maximum latitude).
-            east (float): Eastern boundary (maximum longitude).
+            south (float, required):
+                Southern boundary (minimum latitude).
+            west (float, required):
+                Western boundary (minimum longitude).
+            north (float, required):
+                Northern boundary (maximum latitude).
+            east (float, required):
+                Eastern boundary (maximum longitude).
 
         Returns:
-            tuple[float, float, float, float]: The bounding box in the order (min_lon, min_lat, max_lon, max_lat).
-        """
-        return (west, south, east, north)
-    
-    @staticmethod
-    def convert_bbox(south: float, west: float, north: float, east: float) -> tuple:
-        """
-        Convert user-friendly bounding box order (S, W, N, E)
-        to standard geospatial format (min_lon, min_lat, max_lon, max_lat).
-
-        Parameters
-        ----------
-        south : float
-            Southern boundary (min latitude)
-        west : float
-            Western boundary (min longitude)
-        north : float
-            Northern boundary (max latitude)
-        east : float
-            Eastern boundary (max longitude)
-
-        Returns
-        -------
-        tuple
-            (min_lon, min_lat, max_lon, max_lat)
-        """
+            tuple[float, float, float, float]:
+                The bounding box in the order (min_lon, min_lat, max_lon, max_lat).
+        '''
         return (west, south, east, north)
     
     @staticmethod
     def datetime_to_xr_time(dt: datetime, ds: xr.Dataset) -> Any:
-        """
+        '''
         Convert a Python datetime.datetime to a value compatible with ds.time.
 
-        Parameters
-        ----------
-        dt : datetime.datetime
-            Python datetime (naive or timezone-removed).
-        ds : xarray.Dataset or DataArray
-            Dataset with a time coordinate.
+        Parameters:
+            dt (datetime.datetime, required):
+                Python datetime (naive or timezone-removed).
+            ds (xarray.Dataset | DataArray, required):
+                Dataset with a time coordinate.
 
-        Returns
-        -------
-        datetime.datetime or cftime.datetime
-        """
+        Returns:
+            datetime.datetime | cftime.datetime
+        '''
 
         import cftime
         sample = ds.time.values[0]

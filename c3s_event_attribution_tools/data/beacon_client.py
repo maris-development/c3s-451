@@ -8,8 +8,6 @@ import tempfile
 # Import iris only on supported platforms
 if __import__('sys').platform in ['linux']:
     import iris # type: ignore
-    
-
 
 class BeaconClient():
     def __init__(self, beacon_cache_url: str, beacon_token: str | None = None) -> None:
@@ -34,9 +32,7 @@ class BeaconClient():
             jwt_token=self.beacon_token
         )
 
-    
-    
-    def fetch_from_era5_daily_query(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> beacon_api.JSONQuery:
+    def fetch_from_era5_daily_single_levels_query(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> beacon_api.JSONQuery:
         """
         Create a query to fetch data from the ERA5 Daily Zarr dataset in Beacon Cache.
 
@@ -59,7 +55,7 @@ class BeaconClient():
             against the Beacon Cache.
         """
 
-        era5_table = self.beacon_client.list_tables()['daily']
+        era5_table = self.beacon_client.list_tables()['daily_single_levels']
         query = (era5_table.query()
                  .add_select_column('longitude')
                  .add_select_column('latitude')
@@ -70,7 +66,7 @@ class BeaconClient():
 
         return query
 
-    def fetch_from_era5_daily_zarr_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> xr.Dataset:
+    def fetch_from_era5_daily_single_levels_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> xr.Dataset:
         """
         Fetch data from the ERA5 Daily Zarr dataset in Beacon Cache as an xarray Dataset.
 
@@ -92,52 +88,18 @@ class BeaconClient():
             by spatial and temporal dimensions.
         """
 
-        query = self.fetch_from_era5_daily_query(bbox, time_range, variable)
+        query = self.fetch_from_era5_daily_single_levels_query(bbox, time_range, variable)
 
         ds = query.to_xarray_dataset(dimension_columns=['longitude','latitude','valid_time'], force=True)
+        
+        # wrap longitude to -180 to 180
+        ds = ds.assign_coords(
+            longitude=((ds.longitude + 180) % 360) - 180
+        ).sortby("longitude")
+        
         return ds    
 
-    def fetch_from_era5_daily_zarr_iris(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str):
-        """
-        Fetch data from the ERA5 Daily Zarr dataset in Beacon Cache as an Iris cube.
-
-        This method executes a Beacon API query, saves the resulting data to a 
-        temporary NetCDF file with defined spatial and temporal dimensions, and 
-        loads it as an Iris cube. Note that this functionality is restricted to 
-        Linux environments due to Iris library dependencies.
-
-        Parameters:
-            bbox (tuple[float, float, float, float]):
-                Bounding box coordinates as (min_longitude, min_latitude, max_longitude, max_latitude).
-            time_range (tuple[datetime, datetime]):
-                A tuple containing the (start_date, end_date) for the data request.
-            variable (str):
-                The variable name to fetch. Available options include: 
-                't2m', 't2m_max', 't2m_tmin', and 'total_precipitation'.
-
-        Returns:
-            iris.cube.Cube: An Iris cube containing the fetched daily data with 
-            spatial and temporal coordinates.
-
-        Raises:
-            RuntimeError: If the method is called on a non-Linux platform.
-        """
-        
-        # Check platform
-        if __import__('sys').platform not in ['linux']:
-            raise RuntimeError("Iris cubes is only supported on Linux platforms.")
-
-        query = self.fetch_from_era5_daily_query(bbox, time_range, variable)
-        
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            temp_path = f.name
-        
-        query.to_nd_netcdf(temp_path, ['longitude','latitude','valid_time'], force=True)
-
-        iris_cube = iris.iris.load_cube(temp_path) # type: ignore # we have checked platform above
-        return iris_cube
-
-    def fetch_from_era5_daily_zarr_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> gpd.GeoDataFrame:
+    def fetch_from_era5_daily_single_levels_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> gpd.GeoDataFrame:
         """
         Fetch data from the ERA5 Daily Zarr dataset in Beacon Cache as a GeoDataFrame.
 
@@ -158,11 +120,52 @@ class BeaconClient():
             gpd.GeoDataFrame: A GeoDataFrame containing the fetched data with 
             spatial point geometries and temporal information.
         """
-        query = self.fetch_from_era5_daily_query(bbox, time_range, variable)
+        query = self.fetch_from_era5_daily_single_levels_query(bbox, time_range, variable)
 
         df = query.to_pandas_dataframe()
         
         if df.empty:
             return gpd.GeoDataFrame(columns=['longitude', 'latitude', 'valid_time', variable], geometry=gpd.points_from_xy([], []), crs='EPSG:4326')
-
+        # Wrap longitude to -180 to 180
+        df['longitude'] = ((df['longitude'] + 180) % 360)
         return gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.longitude, df.latitude), crs='EPSG:4326')
+
+    def fetch_from_era5_daily_pressure_levels_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str, levels: list[int]) -> gpd.GeoDataFrame:
+        era5_pressure_levels_table = self.beacon_client.list_tables()['daily_pressure_levels']
+        
+        query = (era5_pressure_levels_table.query()
+                .add_select_column('longitude')
+                .add_select_column('latitude')
+                .add_select_column('pressure_level')
+                .add_select_column('valid_time')
+                .add_select_column(variable)
+                .add_bbox_filter('longitude','latitude', bbox)
+                .add_range_filter('valid_time', gt_eq=time_range[0], lt_eq=time_range[1]))
+        
+        df = query.to_pandas_dataframe()
+        if df.empty:
+            return gpd.GeoDataFrame(columns=['longitude', 'latitude', 'valid_time', variable, 'pressure_level'], geometry=gpd.points_from_xy([], []), crs='EPSG:4326')
+        # Wrap longitude to -180 to 180
+        df['longitude'] = ((df['longitude'] + 180) % 360)
+        return gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.longitude, df.latitude), crs='EPSG:4326')
+    
+    def fetch_from_era5_daily_pressure_levels_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str, levels: list[int]) -> xr.Dataset:
+        era5_pressure_levels_table = self.beacon_client.list_tables()['daily_pressure_levels']
+        
+        query = (era5_pressure_levels_table.query()
+                .add_select_column('longitude')
+                .add_select_column('latitude')
+                .add_select_column('pressure_level')
+                .add_select_column('valid_time')
+                .add_select_column(variable)
+                .add_bbox_filter('longitude','latitude', bbox)
+                .add_range_filter('valid_time', gt_eq=time_range[0], lt_eq=time_range[1]))
+        
+        ds = query.to_xarray_dataset(dimension_columns=['longitude','latitude','pressure_level','valid_time'], force=True)
+        
+        # wrap longitude to -180 to 180
+        ds = ds.assign_coords(
+            longitude=((ds.longitude + 180) % 360) - 180
+        ).sortby("longitude")
+        
+        return ds

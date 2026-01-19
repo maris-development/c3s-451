@@ -44,11 +44,11 @@ class DataClient():
         if cordex_arco_token:
             self.cordex_client = CordexClient(cordex_token=cordex_arco_token)
     
-    def get_beacon_cache_daily_gpd(
+    def _get_beacon_cache_daily_single_levels_gpd(
         self, 
         bbox: tuple[float,float,float,float], 
         time_ranges: list[tuple[datetime,datetime]],
-        variable: Variable) -> gpd.GeoDataFrame | None:
+        variable: Variable.ERA5DailySingleLevel) -> gpd.GeoDataFrame | None:
         if self.beacon_cache is None:
             print("Beacon Cache client not initialized")
             return None
@@ -58,16 +58,16 @@ class DataClient():
         gdfs = []
         for range in time_ranges:
             for adj_bbox in adjusted_bboxes:
-                gdf = self.beacon_cache.fetch_from_era5_daily_zarr_gpd(adj_bbox, range, variable.beacon_name())
+                gdf = self.beacon_cache.fetch_from_era5_daily_single_levels_gpd(adj_bbox, range, variable.beacon_name())
                 gdfs.append(gdf)
         
         return gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
     
-    def get_beacon_cache_daily_xr(
+    def _get_beacon_cache_daily_single_levels_xr(
         self,
         bbox: tuple[float,float,float,float],
         time_ranges: list[tuple[datetime,datetime]],
-        variable: Variable) -> xr.Dataset | None:
+        variable: Variable.ERA5DailySingleLevel) -> xr.Dataset | None:
         if self.beacon_cache is None:
             print("Beacon Cache client not initialized")
             return None
@@ -75,46 +75,37 @@ class DataClient():
         dss = []
         adjusted_bboxes = Conversions.convert_bbox_to_0_360(bbox)
         for range in time_ranges:
+            adjusted_dss = []
             for adj_bbox in adjusted_bboxes:
-                ds = self.beacon_cache.fetch_from_era5_daily_zarr_xr(adj_bbox, range, variable.beacon_name())
-                dss.append(ds)
+                ds = self.beacon_cache.fetch_from_era5_daily_single_levels_xr(adj_bbox, range, variable.beacon_name())
+                adjusted_dss.append(ds)
+                
+            # Merge adjusted_dss along longitude dimension
+            dss.append(xr.merge(adjusted_dss, join="outer"))
 
-        return xr.concat(dss, dim='time') # type: ignore
+        return xr.concat(dss, dim='valid_time') # type: ignore
     
-    def get_cds_daily_data_gpd(
+    def _get_cds_daily_data_single_levels_gpd(
         self,
         bbox:tuple[float, float, float, float],
         time_ranges: list[tuple[datetime, datetime]],
-        variable: Variable,
+        variable: Variable.ERA5DailySingleLevel,
         ) -> gpd.GeoDataFrame:
-        
-        gdfs = []
-        for time_range in time_ranges:
-            print(f"Fetching data from CDS for range: {time_range[0]} - {time_range[1]}")
-            gdf = self.cds_client.fetch_data_single_levels_gpd("derived-era5-single-levels-daily-statistics", bbox=bbox, time_range=time_range, variable=variable)
-            gdfs.append(gdf)
-        
-        return gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
+        return self.cds_client.fetch_data_daily_single_levels_gpd(bbox=bbox, time_ranges=time_ranges, variable=variable)
     
-    def get_cds_daily_data_xr(
+    def _get_cds_daily_data_single_levels_xr(
         self,
         bbox:tuple[float, float, float, float],
         time_ranges: list[tuple[datetime, datetime]],
-        variable: Variable,
+        variable: Variable.ERA5DailySingleLevel,
         ) -> xr.Dataset:
+        return self.cds_client.fetch_data_daily_single_levels_xr(bbox=bbox, time_ranges=time_ranges, variable=variable)
 
-        dss = []
-        for time_range in time_ranges:
-            print(f"Fetching data from CDS for range: {time_range[0]} - {time_range[1]}")
-            ds = self.cds_client.fetch_data_single_levels_xr("derived-era5-single-levels-daily-statistics", bbox=bbox, time_range=time_range, variable=variable)
-            dss.append(ds)
-        return xr.concat(dss, dim='time') # type: ignore
-
-    def get_daily_data_gpd(
+    def _get_daily_data_single_levels_gpd(
         self,
         bbox:tuple[float, float, float, float],
         time_ranges: list[tuple[datetime, datetime]],
-        variable: Variable,
+        variable: Variable.ERA5DailySingleLevel,
         ) -> gpd.GeoDataFrame | None:
         
         all_gdfs = []
@@ -125,7 +116,7 @@ class DataClient():
             min_retrieved_time = None
             max_retrieved_time = None
             if self.beacon_cache is not None:
-                gdf = self.get_beacon_cache_daily_gpd(bbox, [time_range], variable)
+                gdf = self._get_beacon_cache_daily_single_levels_gpd(bbox, [time_range], variable)
                 if gdf is not None and not gdf.empty:
                     gdfs.append(gdf)
                     min_retrieved_time = gdf['valid_time'].min()
@@ -140,7 +131,7 @@ class DataClient():
                     fetch_start = time_range[0]
                     fetch_end = min_retrieved_time if min_retrieved_time is not None else time_range[1]
                     print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
-                    gdf_cds = self.cds_client.fetch_data_single_levels_gpd("derived-era5-single-levels-daily-statistics", bbox=bbox, time_range=(fetch_start, fetch_end), variable=variable)
+                    gdf_cds = self.cds_client.fetch_data_daily_single_levels_gpd(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable)
                     gdf_cds = gdf_cds.rename(columns=variable.cds_variable_renames())
                     max_retrieved_time = gdf_cds['valid_time'].max()
                     gdfs.append(gdf_cds)
@@ -150,7 +141,7 @@ class DataClient():
                     fetch_start = max_retrieved_time if max_retrieved_time is not None else time_range[0]
                     fetch_end = time_range[1]
                     print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
-                    gdf_cds = self.cds_client.fetch_data_single_levels_gpd("derived-era5-single-levels-daily-statistics", bbox=bbox, time_range=(fetch_start, fetch_end), variable=variable)
+                    gdf_cds = self.cds_client.fetch_data_daily_single_levels_gpd(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable)
                     gdf_cds = gdf_cds.rename(columns=variable.cds_variable_renames())
                     gdfs.append(gdf_cds)
         
@@ -160,11 +151,11 @@ class DataClient():
             
         return gpd.GeoDataFrame(pd.concat(all_gdfs, ignore_index=True))
         
-    def get_daily_data_xr(
+    def _get_daily_data_single_levels_xr(
         self,
         bbox:tuple[float, float, float, float],
         time_ranges: list[tuple[datetime, datetime]],
-        variable: Variable,
+        variable: Variable.ERA5DailySingleLevel,
         ) -> xr.Dataset | None:
         
         all_dss = []
@@ -176,7 +167,7 @@ class DataClient():
             min_retrieved_time = None
             max_retrieved_time = None
             if self.beacon_cache is not None:
-                ds = self.get_beacon_cache_daily_xr(bbox, [time_range], variable)
+                ds = self._get_beacon_cache_daily_single_levels_xr(bbox, [time_range], variable)
                 if ds is not None and 'valid_time' in ds:
                     dss.append(ds)
                     min_retrieved_time = ds['valid_time'].values.min()
@@ -191,7 +182,8 @@ class DataClient():
                     fetch_start = time_range[0]
                     fetch_end = pd.to_datetime(min_retrieved_time).to_pydatetime() if min_retrieved_time is not None else time_range[1]
                     print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
-                    ds_cds = self.cds_client.fetch_data_single_levels_xr("derived-era5-single-levels-daily-statistics", bbox=bbox, time_range=(fetch_start, fetch_end), variable=variable)
+                    ds_cds = self.cds_client.fetch_data_daily_single_levels_xr(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable)
+                    max_retrieved_time = ds_cds['valid_time'].values.max()
                     dss.append(ds_cds)
                 
                 if max_retrieved_time is None or max_retrieved_time < np.datetime64(time_range[1]):
@@ -199,13 +191,172 @@ class DataClient():
                     fetch_start = pd.to_datetime(max_retrieved_time).to_pydatetime() if max_retrieved_time is not None else time_range[0]
                     fetch_end = time_range[1]
                     print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
-                    ds_cds = self.cds_client.fetch_data_single_levels_xr("derived-era5-single-levels-daily-statistics", bbox=bbox, time_range=(fetch_start, fetch_end), variable=variable)
+                    ds_cds = self.cds_client.fetch_data_daily_single_levels_xr(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable)
                     dss.append(ds_cds)
         
             all_dss.append(xr.concat(dss, dim='valid_time')) # type: ignore
         
         return xr.concat(all_dss, dim='valid_time') # type: ignore
     
+    def _get_beacon_cache_daily_pressure_levels_gpd(
+        self,
+        bbox:tuple[float, float, float, float],
+        time_ranges: list[tuple[datetime, datetime]],
+        variable: Variable.ERA5DailyPressureLevels,
+        levels: list[int],
+        ) -> gpd.GeoDataFrame | None:
+        if self.beacon_cache is None:
+            print("Beacon Cache client not initialized")
+            return None
+        
+        adjusted_bboxes = Conversions.convert_bbox_to_0_360(bbox)
+        
+        gdfs = []
+        for range in time_ranges:
+            for adj_bbox in adjusted_bboxes:
+                gdf = self.beacon_cache.fetch_from_era5_daily_pressure_levels_gpd(adj_bbox, range, variable.beacon_name(), levels)
+                gdfs.append(gdf)
+        
+        return gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
+    
+    def _get_beacon_cache_daily_pressure_levels_xr(
+        self,
+        bbox:tuple[float, float, float, float],
+        time_ranges: list[tuple[datetime, datetime]],
+        variable: Variable.ERA5DailyPressureLevels,
+        levels: list[int],
+        ) -> xr.Dataset | None:
+        if self.beacon_cache is None:
+            print("Beacon Cache client not initialized")
+            return None
+        
+        adjusted_bboxes = Conversions.convert_bbox_to_0_360(bbox)
+        
+        dss = []
+        for range in time_ranges:
+            adjusted_dss = []
+            for adj_bbox in adjusted_bboxes:
+                ds = self.beacon_cache.fetch_from_era5_daily_pressure_levels_xr(adj_bbox, range, variable.beacon_name(), levels)
+                adjusted_dss.append(ds)
+            # Merge adjusted_dss along longitude dimension
+            dss.append(xr.merge(adjusted_dss, join="outer"))
+        
+        return xr.concat(dss, dim='valid_time') # type: ignore
+    
+    def _get_cds_daily_data_pressure_levels_gpd(
+        self,
+        bbox:tuple[float, float, float, float],
+        time_ranges: list[tuple[datetime, datetime]],
+        variable: Variable.ERA5DailyPressureLevels,
+        levels: list[int],
+        ) -> gpd.GeoDataFrame:
+        return self.cds_client.fetch_data_daily_pressure_levels_gpd(bbox=bbox, time_ranges=time_ranges, variable=variable, levels=levels)
+    
+    def _get_cds_daily_data_pressure_levels_xr(
+        self,
+        bbox:tuple[float, float, float, float],
+        time_ranges: list[tuple[datetime, datetime]],
+        variable: Variable.ERA5DailyPressureLevels,
+        levels: list[int],
+        ) -> xr.Dataset:
+        return self.cds_client.fetch_data_daily_pressure_levels_xr(bbox=bbox, time_ranges=time_ranges, variable=variable, levels=levels)
+    
+    def _get_daily_data_pressure_levels_gpd(
+        self,
+        bbox:tuple[float, float, float, float],
+        time_ranges: list[tuple[datetime, datetime]],
+        variable: Variable.ERA5DailyPressureLevels,
+        levels: list[int],
+        ) -> gpd.GeoDataFrame | None:
+        all_gdfs = []
+        for time_range in time_ranges:
+            print(f"Fetching data for range: {time_range[0]} - {time_range[1]}")
+            
+            gdfs = []
+            min_retrieved_time = None
+            max_retrieved_time = None
+            if self.beacon_cache is not None:
+                gdf = self._get_beacon_cache_daily_pressure_levels_gpd(bbox, [time_range], variable, levels)
+                if gdf is not None and not gdf.empty:
+                    gdfs.append(gdf)
+                    min_retrieved_time = gdf['valid_time'].min()
+                    max_retrieved_time = gdf['valid_time'].max()
+            
+            if min_retrieved_time is None or max_retrieved_time is None or min_retrieved_time > time_range[0] or max_retrieved_time < time_range[1]:
+                # No valid data found in beacon cache or we are missing data for the requested time range
+                print("Missing data in beacon cache, fetching missing data from CDS...")
+
+                if min_retrieved_time is None or min_retrieved_time > time_range[0]:
+                    # Request missing data from CDS
+                    fetch_start = time_range[0]
+                    fetch_end = min_retrieved_time if min_retrieved_time is not None else time_range[1]
+                    print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
+                    gdf_cds = self.cds_client.fetch_data_daily_pressure_levels_gpd(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable, levels=levels)
+                    max_retrieved_time = gdf_cds['valid_time'].max()
+                    gdfs.append(gdf_cds)
+                
+                if max_retrieved_time is None or max_retrieved_time < time_range[1]:
+                    # Request missing data from CDS
+                    fetch_start = max_retrieved_time if max_retrieved_time is not None else time_range[0]
+                    fetch_end = time_range[1]
+                    print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
+                    gdf_cds = self.cds_client.fetch_data_daily_pressure_levels_gpd(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable, levels=levels)
+                    gdfs.append(gdf_cds)
+        
+            all_gdfs.append(gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True)))
+            
+        # ToDo re-implement MARS data fetching if needed
+        return gpd.GeoDataFrame(pd.concat(all_gdfs, ignore_index=True))
+    
+    def _get_daily_data_pressure_levels_xr(
+        self,
+        bbox:tuple[float, float, float, float],
+        time_ranges: list[tuple[datetime, datetime]],
+        variable: Variable.ERA5DailyPressureLevels,
+        levels: list[int],
+        ) -> xr.Dataset | None:
+                
+        all_dss = []
+        for time_range in time_ranges:
+            
+            print(f"Fetching data for range: {time_range[0]} - {time_range[1]}")
+            
+            dss = []
+            min_retrieved_time = None
+            max_retrieved_time = None
+            if self.beacon_cache is not None:
+                ds = self._get_beacon_cache_daily_pressure_levels_xr(bbox, [time_range], variable, levels)
+                if ds is not None and 'valid_time' in ds:
+                    dss.append(ds)
+                    min_retrieved_time = ds['valid_time'].values.min()
+                    max_retrieved_time = ds['valid_time'].values.max()
+            
+            if min_retrieved_time is None or max_retrieved_time is None or min_retrieved_time > np.datetime64(time_range[0]) or max_retrieved_time < np.datetime64(time_range[1]):
+                # No valid data found in beacon cache or we are missing data for the requested time range
+                print("Missing data in beacon cache, fetching missing data from CDS...")
+
+                if min_retrieved_time is None or min_retrieved_time > np.datetime64(time_range[0]):
+                    # Request missing data from CDS
+                    fetch_start = time_range[0]
+                    fetch_end = pd.to_datetime(min_retrieved_time).to_pydatetime() if min_retrieved_time is not None else time_range[1]
+                    print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
+                    ds_cds = self.cds_client.fetch_data_daily_pressure_levels_xr(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable, levels=levels)
+                    max_retrieved_time = ds_cds['valid_time'].values.max()
+                    dss.append(ds_cds)
+                
+                if max_retrieved_time is None or max_retrieved_time < np.datetime64(time_range[1]):
+                    # Request missing data from CDS
+                    fetch_start = pd.to_datetime(max_retrieved_time).to_pydatetime() if max_retrieved_time is not None else time_range[0]
+                    fetch_end = time_range[1]
+                    print(f"Fetching missing data from CDS for range: {fetch_start} - {fetch_end}")
+                    ds_cds = self.cds_client.fetch_data_daily_pressure_levels_xr(bbox=bbox, time_ranges=[(fetch_start, fetch_end)], variable=variable, levels=levels)
+                    dss.append(ds_cds)
+        
+            all_dss.append(xr.concat(dss, dim='valid_time')) # type: ignore
+        
+        return xr.concat(all_dss, dim='valid_time') # type: ignore
+    
+    @deprecated("Use fetch_data_daily_single_levels instead")
     def temperature_2m_mean_gpd(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime, datetime]], from_unit: str = "k", to_unit:str = "c") -> gpd.GeoDataFrame | None:
         """
         Fetch mean 2m temperature data for a specified bounding box and time ranges.
@@ -227,11 +378,12 @@ class DataClient():
             gpd.GeoDataFrame: A GeoDataFrame containing mean 2m temperature data with
             spatial and temporal information.
         """
-        gdf = self.get_daily_data_gpd(bbox, time_ranges, Variable.t2mean)
+        gdf = self._get_daily_data_single_levels_gpd(bbox, time_ranges, Variable.ERA5DailySingleLevel.temperature_2m_mean)
         if gdf is not None and not gdf.empty:
             gdf['t2m'] = Conversions.convert_temperature(gdf['t2m'], from_unit, to_unit)
         return gdf
     
+    @deprecated("Use fetch_data_daily_single_levels_xr instead")
     def temperature_2m_mean_xr(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime, datetime]], from_unit: str = "k", to_unit:str = "c") -> xr.Dataset | None:
         """
         Fetch mean 2m temperature data for a specified bounding box and time ranges.
@@ -253,11 +405,12 @@ class DataClient():
             xr.Dataset: An xarray Dataset containing mean 2m temperature data with
             spatial and temporal information.
         """
-        ds = self.get_daily_data_xr(bbox, time_ranges, Variable.t2mean)
+        ds = self._get_daily_data_single_levels_xr(bbox, time_ranges, Variable.ERA5DailySingleLevel.temperature_2m_mean)
         if ds is not None and 't2m' in ds:
             ds['t2m'].values = Conversions.convert_temperature(ds['t2m'].values, from_unit, to_unit)
         return ds
-        
+    
+    @deprecated("Use fetch_data_daily_single_levels instead")    
     def temperature_2m_min_gpd(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime, datetime]], from_unit: str = "k", to_unit:str = "c") -> gpd.GeoDataFrame | None:
         """
         Fetch minimum 2m temperature data for a specified bounding box and time ranges.
@@ -279,11 +432,12 @@ class DataClient():
             gpd.GeoDataFrame: A GeoDataFrame containing minimum 2m temperature data with
             spatial and temporal information.
         """
-        gdf = self.get_daily_data_gpd(bbox, time_ranges, Variable.t2min)
+        gdf = self._get_daily_data_single_levels_gpd(bbox, time_ranges, Variable.ERA5DailySingleLevel.temperature_2m_min)
         if gdf is not None and not gdf.empty:
             gdf['t2m_min'] = Conversions.convert_temperature(gdf['t2m_min'], from_unit, to_unit)
         return gdf
     
+    @deprecated("Use fetch_data_daily_single_levels_xr instead")
     def temperature_2m_min_xr(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime, datetime]], from_unit: str = "k", to_unit:str = "c") -> xr.Dataset | None:
         """
         Fetch minimum 2m temperature data for a specified bounding box and time ranges.
@@ -305,11 +459,12 @@ class DataClient():
             xr.Dataset: An xarray Dataset containing minimum 2m temperature data with
             spatial and temporal information.
         """
-        ds = self.get_daily_data_xr(bbox, time_ranges, Variable.t2min)
+        ds = self._get_daily_data_single_levels_xr(bbox, time_ranges, Variable.ERA5DailySingleLevel.temperature_2m_min)
         if ds is not None and 't2m_min' in ds:
             ds['t2m_min'].values = Conversions.convert_temperature(ds['t2m_min'].values, from_unit, to_unit)
         return ds
     
+    @deprecated("Use fetch_data_daily_single_levels instead")
     def temperature_2m_max_gpd(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime, datetime]], from_unit: str = "k", to_unit:str = "c") -> gpd.GeoDataFrame | None:
         """
         Fetch maximum 2m temperature data for a specified bounding box and time ranges.
@@ -331,11 +486,12 @@ class DataClient():
             gpd.GeoDataFrame: A GeoDataFrame containing maximum 2m temperature data with
             spatial and temporal information.
         """
-        gdf = self.get_daily_data_gpd(bbox, time_ranges, Variable.t2max)
+        gdf = self._get_daily_data_single_levels_gpd(bbox, time_ranges, Variable.ERA5DailySingleLevel.temperature_2m_max)
         if gdf is not None and not gdf.empty:
             gdf['t2m_max'] = Conversions.convert_temperature(gdf['t2m_max'], from_unit, to_unit)
         return gdf
     
+    @deprecated("Use fetch_data_daily_single_levels_xr instead")
     def temperature_2m_max_xr(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime, datetime]], from_unit: str = "k", to_unit:str = "c") -> xr.Dataset | None:
         """
         Fetch maximum 2m temperature data for a specified bounding box and time ranges.
@@ -357,11 +513,12 @@ class DataClient():
             xr.Dataset: An xarray Dataset containing maximum 2m temperature data with
             spatial and temporal information.
         """ 
-        ds = self.get_daily_data_xr(bbox, time_ranges, Variable.t2max)
+        ds = self._get_daily_data_single_levels_xr(bbox, time_ranges, Variable.ERA5DailySingleLevel.temperature_2m_max)
         if ds is not None and 't2m_max' in ds:
             ds['t2m_max'].values = Conversions.convert_temperature(ds['t2m_max'].values, from_unit, to_unit)
         return ds
     
+    @deprecated("Use fetch_data_daily_single_levels instead")
     def total_precipitation_gpd(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime,datetime]]) -> gpd.GeoDataFrame | None:
         """
         Fetch total precipitation data for a specified bounding box and time ranges.
@@ -378,9 +535,10 @@ class DataClient():
             gpd.GeoDataFrame: A GeoDataFrame containing total precipitation data with
             spatial and temporal information.
         """
-        gdf = self.get_daily_data_gpd(bbox, time_ranges, Variable.tp)
+        gdf = self._get_daily_data_single_levels_gpd(bbox, time_ranges, Variable.ERA5DailySingleLevel.total_precipitation)
         return gdf
     
+    @deprecated("Use fetch_data_daily_single_levels_xr instead")
     def total_precipitation_xr(self, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime,datetime]]) -> xr.Dataset | None:
         """
         Fetch total precipitation data for a specified bounding box and time ranges.
@@ -397,9 +555,10 @@ class DataClient():
             xr.Dataset: An xarray Dataset containing total precipitation data with
             spatial and temporal information.
         """
-        ds = self.get_daily_data_xr(bbox, time_ranges, Variable.tp)
+        ds = self._get_daily_data_single_levels_xr(bbox, time_ranges, Variable.ERA5DailySingleLevel.total_precipitation)
         return ds
 
+    @deprecated("Use fetch_data_daily_single_levels instead")
     def mean_sea_level_pressure_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime]) -> gpd.GeoDataFrame:
         """
         Fetch mean sea level pressure data for a specified bounding box and time range.
@@ -417,8 +576,9 @@ class DataClient():
             gpd.GeoDataFrame: A GeoDataFrame containing mean sea level pressure data with
             spatial and temporal information.
         """
-        return self.cds_client.fetch_data_single_levels_gpd("derived-era5-single-levels-daily-statistics", Variable.mslp, bbox, time_range)
+        return self.cds_client.fetch_data_daily_single_levels_gpd(bbox=bbox, time_ranges=[time_range], variable=Variable.ERA5DailySingleLevel.mean_sea_level_pressure)
     
+    @deprecated("Use fetch_data_daily_single_levels_xr instead")
     def mean_sea_level_pressure_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime]) -> xr.Dataset:
         """
         Fetch mean sea level pressure data for a specified bounding box and time range.
@@ -436,8 +596,9 @@ class DataClient():
             xr.Dataset: An xarray Dataset containing mean sea level pressure data with
             spatial and temporal information.
         """
-        return self.cds_client.fetch_data_single_levels_xr("derived-era5-single-levels-daily-statistics", Variable.mslp, bbox, time_range)
+        return self.cds_client.fetch_data_daily_single_levels_xr(bbox=bbox, time_ranges=[time_range], variable=Variable.ERA5DailySingleLevel.mean_sea_level_pressure)
 
+    @deprecated("Use fetch_data_daily_single_levels instead")
     def z500_geopotential_mean_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime]) -> gpd.GeoDataFrame:
         """
         Fetch daily mean geopotential data at 500 hPa pressure level from ERA5.
@@ -457,8 +618,9 @@ class DataClient():
                 A GeoDataFrame containing the daily mean geopotential data
                 at 500 hPa pressure level for the specified spatial and temporal extent.
         """
-        return self.cds_client.fetch_data_pressure_levels_gpd("derived-era5-pressure-levels-daily-statistics", Variable.geopotential, bbox, time_range, levels=[500])
+        return self.cds_client.fetch_data_daily_pressure_levels_gpd(bbox=bbox, time_ranges=[time_range], variable=Variable.ERA5DailyPressureLevels.geopotential, levels=[500])
     
+    @deprecated("Use fetch_data_daily_single_levels_xr instead")
     def z500_geopotential_mean_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime]) -> xr.Dataset:
         """
         Fetch daily mean geopotential data at 500 hPa pressure level from ERA5.
@@ -478,7 +640,42 @@ class DataClient():
                 An xarray Dataset containing the daily mean geopotential data
                 at 500 hPa pressure level for the specified spatial and temporal extent.
         """
-        return self.cds_client.fetch_data_pressure_levels_xr("derived-era5-pressure-levels-daily-statistics", Variable.geopotential, bbox, time_range, levels=[500])
+        return self.cds_client.fetch_data_daily_pressure_levels_xr(Variable.ERA5DailyPressureLevels.geopotential, bbox, time_ranges=[time_range], levels=[500])
+    
+    def fetch_era5_daily_single_levels(self, variable: Variable.ERA5DailySingleLevel, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime,datetime]], from_unit:str|None = None, to_unit:str|None = None) -> gpd.GeoDataFrame | None:
+        gdf = self._get_daily_data_single_levels_gpd(bbox, time_ranges, variable)
+        
+        if from_unit and to_unit and gdf is not None and not gdf.empty:
+            # Convert units based on variable type. 
+            # ToDo: Implement a more general conversion mechanism for other variable types
+            gdf[variable.column_name()] = Conversions.convert_temperature(gdf[variable.column_name()], from_unit, to_unit)
+            
+        return gdf
+    
+    def fetch_era5_daily_single_levels_xr(self, variable: Variable.ERA5DailySingleLevel, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime,datetime]], from_unit:str|None = None, to_unit:str|None = None) -> xr.Dataset | None:
+        ds = self._get_daily_data_single_levels_xr(bbox, time_ranges, variable)
+        
+        if from_unit and to_unit and ds is not None and variable.column_name() in ds:
+            # Convert units based on variable type.
+            # ToDo: Implement a more general conversion mechanism for other variable types
+            ds[variable.column_name()].values = Conversions.convert_temperature(ds[variable.column_name()].values, from_unit, to_unit)
+        return ds
+    
+    def fetch_era5_daily_pressure_levels(self, variable: Variable.ERA5DailyPressureLevels, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime,datetime]], levels: list[int], from_unit:str|None = None, to_unit:str|None = None) -> gpd.GeoDataFrame | None:
+        gdf = self._get_daily_data_pressure_levels_gpd(variable=variable, bbox=bbox, time_ranges=time_ranges, levels=levels)
+        if from_unit and to_unit and gdf is not None and not gdf.empty:
+            # Convert units based on variable type.
+            # ToDo: Implement a more general conversion mechanism for other variable types
+            gdf[variable.column_name()] = Conversions.convert_temperature(gdf[variable.column_name()], from_unit, to_unit)
+        return gdf
+    
+    def fetch_era5_daily_pressure_levels_xr(self, variable: Variable.ERA5DailyPressureLevels, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime,datetime]], levels: list[int], from_unit:str|None = None, to_unit:str|None = None) -> xr.Dataset | None:
+        ds = self._get_daily_data_pressure_levels_xr(variable=variable, bbox=bbox, time_ranges=time_ranges, levels=levels)
+        if from_unit and to_unit and ds is not None and variable.column_name() in ds:
+            # Convert units based on variable type.
+            # ToDo: Implement a more general conversion mechanism for other variable types
+            ds[variable.column_name()].values = Conversions.convert_temperature(ds[variable.column_name()].values, from_unit, to_unit)
+        return ds
     
     def fetch_data(self, parameter:str, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], from_unit:str|None = None, to_unit:str|None = None) -> gpd.GeoDataFrame | None:
         """
@@ -520,12 +717,12 @@ class DataClient():
                 within the given year range.
         """
         variable_map = {
-            "tmean": Variable.t2mean,
-            "tmin": Variable.t2min,
-            "tmax": Variable.t2max,
-            "precipitation": Variable.tp,
-            "z500": Variable.geopotential,
-            "slp": Variable.mslp
+            "tmean": Variable.ERA5DailySingleLevel.temperature_2m_mean,
+            "tmin": Variable.ERA5DailySingleLevel.temperature_2m_min,
+            "tmax": Variable.ERA5DailySingleLevel.temperature_2m_max,
+            "precipitation": Variable.ERA5DailySingleLevel.total_precipitation,
+            "z500": Variable.ERA5DailyPressureLevels.geopotential,
+            "slp": Variable.ERA5DailySingleLevel.mean_sea_level_pressure
         }
         parameter = parameter.lower()
         if parameter not in variable_map:
@@ -534,13 +731,13 @@ class DataClient():
         variable = variable_map[parameter]
 
         match variable:
-            case Variable.t2mean | Variable.t2min | Variable.t2max | Variable.tp:
+            case Variable.ERA5DailySingleLevel.temperature_2m_mean | Variable.ERA5DailySingleLevel.temperature_2m_min | Variable.ERA5DailySingleLevel.temperature_2m_max | Variable.ERA5DailySingleLevel.total_precipitation:
                 # ToDo implement month filtering
-                gdf = self.get_daily_data_gpd(bbox, [time_range], variable)
-            case Variable.geopotential:
-                gdf = self.z500_geopotential_mean_gpd(bbox, time_range)
-            case Variable.mslp:
-                gdf = self.mean_sea_level_pressure_gpd(bbox, time_range)
+                gdf = self.fetch_era5_daily_single_levels(variable, bbox, [time_range], from_unit, to_unit)
+            case Variable.ERA5DailyPressureLevels.geopotential:
+                gdf = self.fetch_era5_daily_pressure_levels(variable, bbox, [time_range], levels=[500], from_unit=from_unit, to_unit=to_unit)
+            case Variable.ERA5DailySingleLevel.mean_sea_level_pressure:
+                gdf = self.fetch_era5_daily_single_levels(variable, bbox, [time_range], from_unit, to_unit)
             case _:
                 raise ValueError(f"Unsupported variable: {variable}")
         
@@ -579,12 +776,12 @@ class DataClient():
                 (integers not in 1–12, or unrecognized month names).
         """
         variable_map = {
-            "tmean": Variable.t2mean,
-            "tmin": Variable.t2min,
-            "tmax": Variable.t2max,
-            "precipitation": Variable.tp,
-            "z500": Variable.geopotential,
-            "slp": Variable.mslp
+            "tmean": Variable.ERA5DailySingleLevel.temperature_2m_mean,
+            "tmin": Variable.ERA5DailySingleLevel.temperature_2m_min,
+            "tmax": Variable.ERA5DailySingleLevel.temperature_2m_max,
+            "precipitation": Variable.ERA5DailySingleLevel.total_precipitation,
+            "z500": Variable.ERA5DailyPressureLevels.geopotential,
+            "slp": Variable.ERA5DailySingleLevel.mean_sea_level_pressure
         }
         parameter = parameter.lower()
         if parameter not in variable_map:
@@ -593,15 +790,12 @@ class DataClient():
         variable = variable_map[parameter]
 
         match variable:
-            case Variable.t2mean | Variable.t2min | Variable.t2max | Variable.tp:
-                # ToDo implement month filtering
-                ds = self.get_daily_data_xr(bbox, [time_range], variable)
-            case Variable.geopotential:
-                # ToDo implement geopotential xr fetching
-                ds = self.z500_geopotential_mean_xr(bbox, time_range)
-            case Variable.mslp:
-                # ToDo implement mslp xr fetching
-                ds = self.mean_sea_level_pressure_xr(bbox, time_range)
+            case Variable.ERA5DailySingleLevel.temperature_2m_mean | Variable.ERA5DailySingleLevel.temperature_2m_min | Variable.ERA5DailySingleLevel.temperature_2m_max | Variable.ERA5DailySingleLevel.total_precipitation:
+                ds = self.fetch_era5_daily_single_levels_xr(variable, bbox, [time_range], from_unit=from_unit, to_unit=to_unit)
+            case Variable.ERA5DailyPressureLevels.geopotential:
+                ds = self.fetch_era5_daily_pressure_levels_xr(variable, bbox, [time_range], levels=[500], from_unit=from_unit, to_unit=to_unit)
+            case Variable.ERA5DailySingleLevel.mean_sea_level_pressure:
+                ds = self.fetch_era5_daily_single_levels_xr(variable, bbox, [time_range], from_unit=from_unit, to_unit=to_unit)
             case _:
                 raise ValueError(f"Unsupported variable for xarray output: {variable}")
         
@@ -631,7 +825,7 @@ class DataClient():
 
     def fetch_cmip6(
         self,
-        variable: str,
+        variable: Variable.CMIP6,
         model: str,
         bbox: tuple[float, float, float, float],
         time_range: tuple[datetime, datetime],
@@ -660,7 +854,7 @@ class DataClient():
 
     def fetch_cmip6_xr(
         self,
-        variable: str,
+        variable: Variable.CMIP6,
         model: str,
         bbox: tuple[float, float, float, float],
         time_range: tuple[datetime, datetime],
@@ -758,7 +952,6 @@ class DataClient():
     @deprecated("Use `self.fetch_data()` instead.")
     def GET(self, *args, **kwargs):
         return self.fetch_data(*args, **kwargs)
-    
 
     def gmst(self, time_range: tuple[datetime,datetime], from_unit:str = "k", to_unit:str = "c", bbox: tuple[float,float,float,float] | None = None) -> gpd.GeoDataFrame:
         """
@@ -810,3 +1003,39 @@ class DataClient():
         # Concatenate all Datasets
         ds['t2m'].values = Conversions.convert_temperature(ds['t2m'].values, from_unit, to_unit)
         return ds # type: ignore
+    
+    def fetch_cmip5_monthly_single_levels_xr(self, experiment:str, variable: Variable.CMIP5Monthly, model: str, ensemble_member: str, period: str) -> xr.Dataset:
+        """
+        Fetch CMIP5 monthly data from CDS as an xarray Dataset.
+
+        Parameters:
+            experiment (str): CMIP5 experiment name (e.g. "historical", "rcp85").
+            variable (str): CMIP5 variable name (e.g. "tasmax", "tas", "pr").
+            model (str): CMIP5 model name (e.g. "access1_0").
+            ensemble_member (str): Ensemble member identifier (e.g. "r1i1p1").
+            period (str): Time period in the format "YYYY-MM" or "YYYY-MM to YYYY-MM".
+
+        Returns:
+            xr.Dataset: CMIP5 data for the requested selection.
+        """
+        return self.cds_client.fetch_monthly_single_levels_cmip5_xr(
+            experiment, variable, model, ensemble_member, period
+        )
+    
+    def fetch_cmip5_monthly_single_levels_gpd(self, experiment:str, variable: Variable.CMIP5Monthly, model: str, ensemble_member: str, period: str) -> gpd.GeoDataFrame:
+        """
+        Fetch CMIP5 monthly data from CDS as a GeoDataFrame.
+
+        Parameters:
+            experiment (str): CMIP5 experiment name (e.g. "historical", "rcp85").
+            variable (str): CMIP5 variable name (e.g. "tasmax", "tas", "pr").
+            model (str): CMIP5 model name (e.g. "access1_0").
+            ensemble_member (str): Ensemble member identifier (e.g. "r1i1p1").
+            period (str): Time period in the format "YYYY-MM" or "YYYY-MM to YYYY-MM".
+
+        Returns:
+            gpd.GeoDataFrame: CMIP5 data for the requested selection.
+        """
+        return self.cds_client.fetch_monthly_single_levels_cmip5_gpd(
+            experiment, variable, model, ensemble_member, period
+        )

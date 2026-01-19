@@ -704,7 +704,7 @@ class Utils:
     @staticmethod
     def get_seasonal_cycle_plot_values(data:gpd.GeoDataFrame, datetime_col:str='valid_time',
                                        month_range:tuple[int, int]=(1,12)
-                                       ) -> tuple[gpd.GeoDataFrame, pd.Index[str], pd.DatetimeIndex]:
+                                       ) -> tuple[gpd.GeoDataFrame, pd.Index, pd.DatetimeIndex]:
         '''
         Prepares a GeoDataFrame for seasonal cycle plotting by adjusting datetime values for correct chronological ordering across month boundaries.
 

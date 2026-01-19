@@ -679,7 +679,7 @@ class Process:
                             event_end: pd.Timestamp,
                             datetime_col: str = "valid_time",
                             month_range: tuple[int, int]=(1,12),
-    ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, pd.Index[Any], pd.DatetimeIndex]:
+    ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, pd.Index, pd.DatetimeIndex]:
         '''
         Calculate seasonal cycle of climatology data for a study region.
 

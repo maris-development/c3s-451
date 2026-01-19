@@ -58,7 +58,7 @@ class DataClient():
         gdfs = []
         for range in time_ranges:
             for adj_bbox in adjusted_bboxes:
-                gdf = self.beacon_cache.fetch_from_era5_daily_single_levels_gpd(adj_bbox, range, variable.beacon_name())
+                gdf = self.beacon_cache.fetch_from_era5_daily_single_levels_gpd(adj_bbox, range, variable)
                 gdfs.append(gdf)
         
         return gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
@@ -77,7 +77,7 @@ class DataClient():
         for range in time_ranges:
             adjusted_dss = []
             for adj_bbox in adjusted_bboxes:
-                ds = self.beacon_cache.fetch_from_era5_daily_single_levels_xr(adj_bbox, range, variable.beacon_name())
+                ds = self.beacon_cache.fetch_from_era5_daily_single_levels_xr(adj_bbox, range, variable)
                 adjusted_dss.append(ds)
                 
             # Merge adjusted_dss along longitude dimension

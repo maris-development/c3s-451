@@ -113,8 +113,8 @@ class Variable:
             translation_dict = {
                 Variable.ERA5DailySingleLevel.temperature_2m_mean: {'t2m': 't2m'},
                 Variable.ERA5DailySingleLevel.total_precipitation: {'tp': 'tp'},
-                Variable.ERA5DailySingleLevel.temperature_2m_min: {'t2m': 't2m_min'},
-                Variable.ERA5DailySingleLevel.temperature_2m_max: {'t2m': 't2m_max'},
+                Variable.ERA5DailySingleLevel.temperature_2m_min: {'t2m': 't2m'},
+                Variable.ERA5DailySingleLevel.temperature_2m_max: {'t2m': 't2m'},
             }
             return translation_dict[self]
         
@@ -127,8 +127,8 @@ class Variable:
             """
             translation_dict = {
                 Variable.ERA5DailySingleLevel.temperature_2m_mean: 't2m',
-                Variable.ERA5DailySingleLevel.temperature_2m_max: 't2m_max', 
-                Variable.ERA5DailySingleLevel.temperature_2m_min: 't2m_min', 
+                Variable.ERA5DailySingleLevel.temperature_2m_max: 't2m', 
+                Variable.ERA5DailySingleLevel.temperature_2m_min: 't2m', 
                 Variable.ERA5DailySingleLevel.total_precipitation: 'tp',
                 Variable.ERA5DailySingleLevel.mean_sea_level_pressure: 'msl',
             }
@@ -145,8 +145,39 @@ class Variable:
                 Variable.ERA5DailySingleLevel.temperature_2m_mean: 't2m',
                 Variable.ERA5DailySingleLevel.temperature_2m_max: 't2m_max',
                 Variable.ERA5DailySingleLevel.temperature_2m_min: 't2m_min',
+                Variable.ERA5DailySingleLevel.total_precipitation: 'total_precipitation',
+                Variable.ERA5DailySingleLevel.mean_sea_level_pressure: 'msl',
+            }
+            return translation_dict[self]
+        
+        def beacon_alias(self) -> str:
+            """
+            Get the corresponding Beacon alias for the variable.
+
+            Returns:
+                str: The Beacon alias.
+            """
+            translation_dict = {
+                Variable.ERA5DailySingleLevel.temperature_2m_mean: 't2m',
+                Variable.ERA5DailySingleLevel.temperature_2m_max: 't2m',
+                Variable.ERA5DailySingleLevel.temperature_2m_min: 't2m',
                 Variable.ERA5DailySingleLevel.total_precipitation: 'tp',
                 Variable.ERA5DailySingleLevel.mean_sea_level_pressure: 'msl',
+            }
+            return translation_dict[self]
+        
+        def beacon_variable_renames(self) -> dict[str, str]:
+            """
+            Get the renaming dictionary for CDS variable names to standard names.
+
+            Returns:
+                dict: A dictionary mapping CDS variable names to standard names.
+            """
+            translation_dict = {
+                Variable.ERA5DailySingleLevel.temperature_2m_mean: {'t2m': 't2m'},
+                Variable.ERA5DailySingleLevel.total_precipitation: {'total_precipitation': 'tp'},
+                Variable.ERA5DailySingleLevel.temperature_2m_min: {'t2m_min': 't2m'},
+                Variable.ERA5DailySingleLevel.temperature_2m_max: {'t2m_max': 't2m'},
             }
             return translation_dict[self]
         

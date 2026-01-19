@@ -4,6 +4,7 @@ import pandas as pd
 import xarray as xr
 from datetime import datetime, timedelta
 import tempfile
+from .variable import Variable
 
 # Import iris only on supported platforms
 if __import__('sys').platform in ['linux']:
@@ -32,7 +33,7 @@ class BeaconClient():
             jwt_token=self.beacon_token
         )
 
-    def fetch_from_era5_daily_single_levels_query(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> beacon_api.JSONQuery:
+    def fetch_from_era5_daily_single_levels_query(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: Variable.ERA5DailySingleLevel) -> beacon_api.JSONQuery:
         """
         Create a query to fetch data from the ERA5 Daily Zarr dataset in Beacon Cache.
 
@@ -60,13 +61,13 @@ class BeaconClient():
                  .add_select_column('longitude')
                  .add_select_column('latitude')
                  .add_select_column('valid_time')
-                 .add_select_column(variable)
+                 .add_select_column(variable.beacon_name(), variable.beacon_alias())
                  .add_bbox_filter('longitude','latitude', bbox)
                  .add_range_filter('valid_time', gt_eq=time_range[0], lt_eq=time_range[1]))
 
         return query
 
-    def fetch_from_era5_daily_single_levels_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> xr.Dataset:
+    def fetch_from_era5_daily_single_levels_xr(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: Variable.ERA5DailySingleLevel) -> xr.Dataset:
         """
         Fetch data from the ERA5 Daily Zarr dataset in Beacon Cache as an xarray Dataset.
 
@@ -99,7 +100,7 @@ class BeaconClient():
         
         return ds    
 
-    def fetch_from_era5_daily_single_levels_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: str) -> gpd.GeoDataFrame:
+    def fetch_from_era5_daily_single_levels_gpd(self, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], variable: Variable.ERA5DailySingleLevel) -> gpd.GeoDataFrame:
         """
         Fetch data from the ERA5 Daily Zarr dataset in Beacon Cache as a GeoDataFrame.
 

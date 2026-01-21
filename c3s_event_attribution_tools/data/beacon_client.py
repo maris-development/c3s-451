@@ -91,7 +91,7 @@ class BeaconClient():
 
         query = self.fetch_from_era5_daily_single_levels_query(bbox, time_range, variable)
 
-        ds = query.to_xarray_dataset(dimension_columns=['longitude','latitude','valid_time'], force=True)
+        ds = query.to_xarray_dataset(dimension_columns=['valid_time','longitude','latitude'], force=True)
         
         # wrap longitude to -180 to 180
         ds = ds.assign_coords(
@@ -162,7 +162,7 @@ class BeaconClient():
                 .add_bbox_filter('longitude','latitude', bbox)
                 .add_range_filter('valid_time', gt_eq=time_range[0], lt_eq=time_range[1]))
         
-        ds = query.to_xarray_dataset(dimension_columns=['longitude','latitude','pressure_level','valid_time'], force=True)
+        ds = query.to_xarray_dataset(dimension_columns=['valid_time','longitude','latitude','pressure_level'], force=True)
         
         # wrap longitude to -180 to 180
         ds = ds.assign_coords(

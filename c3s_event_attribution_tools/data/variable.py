@@ -32,7 +32,7 @@ class Variable:
         near_surface_air_temperature = 1 # near surface air temperature
         daily_maximum_near_surface_air_temperature = 2 # maximum daily near surface air temperature
         daily_minimum_near_surface_air_temperature = 3 # minimum daily near surface air temperature
-        precipitation = 2 # precipitation
+        precipitation = 4 # precipitation
         
         def cds_name(self) -> str:
             """
@@ -42,10 +42,10 @@ class Variable:
                 str: The CDS variable name.
             """
             translation_dict = {
-                Variable.CMIP6.near_surface_air_temperature: '2m_temperature',
-                Variable.CMIP6.daily_maximum_near_surface_air_temperature: '2m_temperature',
-                Variable.CMIP6.daily_minimum_near_surface_air_temperature: '2m_temperature',
-                Variable.CMIP6.precipitation: 'total_precipitation',
+                Variable.CMIP6.near_surface_air_temperature: 'near_surface_air_temperature',
+                Variable.CMIP6.daily_maximum_near_surface_air_temperature: 'daily_maximum_near_surface_air_temperature',
+                Variable.CMIP6.daily_minimum_near_surface_air_temperature: 'daily_minimum_near_surface_air_temperature',
+                Variable.CMIP6.precipitation: 'precipitation',
             }
             return translation_dict[self]
         
@@ -60,7 +60,7 @@ class Variable:
                 Variable.CMIP6.near_surface_air_temperature: 'tas',
                 Variable.CMIP6.daily_maximum_near_surface_air_temperature: 'tasmax',
                 Variable.CMIP6.daily_minimum_near_surface_air_temperature: 'tasmin',
-                Variable.CMIP6.precipitation: 'tp',
+                Variable.CMIP6.precipitation: 'pr',
             }
             return translation_dict[self]
         

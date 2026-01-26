@@ -606,8 +606,8 @@ class CDSClient():
         ds = xr.open_dataset(file)
         # Wrap longitude to -180 to 180
         ds = ds.assign_coords(
-            longitude=((ds.longitude + 180) % 360) - 180
-        ).sortby("longitude")
+            lon=((ds.lon + 180) % 360) - 180
+        ).sortby("lon")
         
         # Convert filter time range to approriate calender
         xr_time_start = Utils.datetime_to_xr_time(time_range[0], ds)
@@ -622,7 +622,7 @@ class CDSClient():
         # convert entire dataset to DataFrame
         df = ds.to_dataframe().reset_index()
         # create geometry
-        df['geometry'] = gpd.points_from_xy(df['longitude'], df['latitude'])
+        df['geometry'] = gpd.points_from_xy(df['lon'], df['lat'])
         gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
         return gdf
     

@@ -9,6 +9,85 @@ def identity(x: T) -> T:
 
 class Conversions:
     @staticmethod
+    def convert_unit(array: T, from_unit: str, to_unit: str) -> T:
+        """
+        Convert units of measurement for the provided array or pandas Series.
+
+        This method currently supports temperature conversions between Kelvin (k),
+        Celsius (c), and Fahrenheit (f). Additional unit conversions can be added
+        as needed.
+
+        Parameters:
+            array (np.ndarray or pd.Series):
+                The input array or Series containing values to be converted.
+            from_unit (str):
+                Source unit of measurement (e.g., 'k', 'c', 'f', 'm').
+            to_unit (str):
+                Target unit of measurement (e.g., 'k', 'c', 'f', 'mm').
+        Returns:
+            np.ndarray or pd.Series: The array or Series with values converted to the
+            target unit.
+        """
+        if from_unit in ['k', 'c', 'f'] and to_unit in ['k', 'c', 'f']:
+            return Conversions.convert_temperature(array, from_unit, to_unit)
+        elif from_unit in ['m', 'mm'] and to_unit in ['m', 'mm']:
+            return Conversions.convert_precipitation(array, from_unit, to_unit)
+        else:
+            raise ValueError(f"Unsupported unit conversion from {from_unit} to {to_unit}")
+    
+    @staticmethod
+    def convert_precipitation(array: T, from_unit: str, to_unit: str) -> T:
+        """
+        Convert precipitation values from one unit to another.
+
+        This method performs in-place precipitation conversion on the provided array or
+        pandas Series and supports meters (m) and millimeters (mm).
+
+        Parameters:
+            array (np.ndarray or pd.Series):
+                The input array or Series containing precipitation values to be converted.
+            from_unit (str):
+                Source precipitation unit ('m' or 'mm'). Default is 'm'.
+            to_unit (str):
+                Target precipitation unit ('m' or 'mm'). Default is 'mm'.
+        Returns:
+            np.ndarray or pd.Series: The array or Series with precipitation values converted to the
+            target unit.
+        """
+        if isinstance(array, np.ndarray):
+            return Conversions._inner_convert_precipitation(array, from_unit, to_unit)
+        elif isinstance(array, pd.Series):
+            pandas_np_array : np.ndarray = array.values # type: ignore
+            return pd.Series(Conversions._inner_convert_precipitation(pandas_np_array, from_unit, to_unit))
+        else:
+            raise TypeError("Unsupported type for temperature conversion: " + str(type(array)))
+    
+    @staticmethod
+    def _inner_convert_precipitation(array: np.ndarray, from_unit: str, to_unit: str) -> np.ndarray:
+        """
+        This static helper method handles the mathematical transformation between 
+        meters and millimeters.
+
+        Parameters:
+            array (np.ndarray):
+                The numeric array containing precipitation values to be converted.
+            from_unit (str):
+                The current unit of the data. Supported values: "m", "mm".
+            to_unit (str):
+                The target unit for the data. Supported values: "m", "mm".
+        Returns:
+            np.ndarray: A new array containing the converted precipitation values.
+        """
+        if from_unit == to_unit:
+            return array
+        elif from_unit == "m" and to_unit == "mm":
+            return array * 1000.0
+        elif from_unit == "mm" and to_unit == "m":
+            return array / 1000.0
+        else:
+            raise ValueError(f"Unsupported precipitation conversion from {from_unit} to {to_unit}")
+    
+    @staticmethod
     def convert_temperature(array: T, from_unit: str, to_unit: str) -> T:
         """
         Convert temperature values from one unit to another.

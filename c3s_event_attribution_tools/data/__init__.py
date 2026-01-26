@@ -648,7 +648,7 @@ class DataClient():
         if from_unit and to_unit and gdf is not None and not gdf.empty:
             # Convert units based on variable type. 
             # ToDo: Implement a more general conversion mechanism for other variable types
-            gdf[variable.column_name()] = Conversions.convert_temperature(gdf[variable.column_name()], from_unit, to_unit)
+            gdf[variable.column_name()] = Conversions.convert_unit(gdf[variable.column_name()], from_unit, to_unit)
             
         return gdf
     
@@ -658,7 +658,7 @@ class DataClient():
         if from_unit and to_unit and ds is not None and variable.column_name() in ds:
             # Convert units based on variable type.
             # ToDo: Implement a more general conversion mechanism for other variable types
-            ds[variable.column_name()].values = Conversions.convert_temperature(ds[variable.column_name()].values, from_unit, to_unit)
+            ds[variable.column_name()].values = Conversions.convert_unit(ds[variable.column_name()].values, from_unit, to_unit)
         return ds
     
     def fetch_era5_daily_pressure_levels(self, variable: Variable.ERA5DailyPressureLevels, bbox: tuple[float,float,float,float], time_ranges: list[tuple[datetime,datetime]], levels: list[int], from_unit:str|None = None, to_unit:str|None = None) -> gpd.GeoDataFrame | None:

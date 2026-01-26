@@ -529,7 +529,7 @@ class Process:
         '''
 
         # this line doesnt work because groupby cant be used on a weighted dataframe
-        if isinstance(df, (xr.DataArray, xr.Dataset, xr.computation.weighted.DataArrayWeighted)):
+        if isinstance(df, (xr.DataArray, xr.Dataset)):
             return (df.groupby(groupby_col).mean(dim=('latitude', 'logitude')))
 
         if isinstance(df, (gpd.GeoDataFrame)):

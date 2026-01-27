@@ -1711,61 +1711,61 @@ class Analogues:
 
             # J: previous code for con_lev
             # =====================================================================================
-            if var == 'z500' or (var == 'msl' or var == 'slp'):  
-                con_lev = np.round(np.arange(np.min([PAST_comp.data, PRST_comp.data, event_cube.data]), np.max([PAST_comp.data, PRST_comp.data, event_cube.data]), 2))
-                #con_lev = np.round(np.arange(-abs(max(([np.min([PAST_comp.data, PRST_comp.data, E.data]), np.max([PAST_comp.data, PRST_comp.data, E.data])]), key=abs)), abs(max(([np.min([PAST_comp.data, PRST_comp.data, E.data]), np.max([PAST_comp.data, PRST_comp.data, E.data])]), key=abs)), 2))
-            if var == 't2m':
-                con_lev = np.round(np.arange(0, np.max([PAST_comp.data, PRST_comp.data, event_cube.data]), 2))
-            if var == 'tp':
-                con_lev = np.arange(0, np.max([PAST_comp.data,PRST_comp.data, event_cube.data])/2, .2)
+            # if var == 'z500' or (var == 'msl' or var == 'slp'):  
+            #     con_lev = np.round(np.arange(np.min([PAST_comp.data, PRST_comp.data, event_cube.data]), np.max([PAST_comp.data, PRST_comp.data, event_cube.data]), 2))
+            #     #con_lev = np.round(np.arange(-abs(max(([np.min([PAST_comp.data, PRST_comp.data, E.data]), np.max([PAST_comp.data, PRST_comp.data, E.data])]), key=abs)), abs(max(([np.min([PAST_comp.data, PRST_comp.data, E.data]), np.max([PAST_comp.data, PRST_comp.data, E.data])]), key=abs)), 2))
+            # if var == 't2m':
+            #     con_lev = np.round(np.arange(0, np.max([PAST_comp.data, PRST_comp.data, event_cube.data]), 2))
+            # if var == 'tp':
+            #     con_lev = np.arange(0, np.max([PAST_comp.data,PRST_comp.data, event_cube.data])/2, .2)
             # =====================================================================================
             
             # J: new code for con_lev
             # =====================================================================================
-            # if var == 'z500' or (var == 'msl' or var == 'slp'):
-            #     vmin = np.nanmin([
-            #         np.nanmin(PAST_comp.data),
-            #         np.nanmin(PRST_comp.data),
-            #         np.nanmin(event_cube.data),
-            #     ])
-            #     vmax = np.nanmax([
-            #         np.nanmax(PAST_comp.data),
-            #         np.nanmax(PRST_comp.data),
-            #         np.nanmax(event_cube.data),
-            #     ])
-            #     con_lev = np.round(np.arange(vmin, vmax, 2))
-            # if var == 't2m':
-            #     vmax = np.nanmax([
-            #         np.nanmax(PAST_comp.data),
-            #         np.nanmax(PRST_comp.data),
-            #         np.nanmax(event_cube.data),
-            #     ])
-            #     con_lev = np.round(np.arange(0, vmax, 2))
-            # if var == 'tp':
-            #     vmax = np.nanmax([
-            #         np.nanmax(PAST_comp.data),
-            #         np.nanmax(PRST_comp.data),
-            #         np.nanmax(event_cube.data),
-            #     ])
-            #     con_lev = np.arange(0, vmax / 2, 0.2)
+            if var == 'z500' or (var == 'msl' or var == 'slp'):
+                vmin = np.nanmin([
+                    np.nanmin(PAST_comp.data),
+                    np.nanmin(PRST_comp.data),
+                    np.nanmin(event_cube.data),
+                ])
+                vmax = np.nanmax([
+                    np.nanmax(PAST_comp.data),
+                    np.nanmax(PRST_comp.data),
+                    np.nanmax(event_cube.data),
+                ])
+                con_lev = np.round(np.arange(vmin, vmax, 2))
+            if var == 't2m':
+                vmax = np.nanmax([
+                    np.nanmax(PAST_comp.data),
+                    np.nanmax(PRST_comp.data),
+                    np.nanmax(event_cube.data),
+                ])
+                con_lev = np.round(np.arange(0, vmax, 2))
+            if var == 'tp':
+                vmax = np.nanmax([
+                    np.nanmax(PAST_comp.data),
+                    np.nanmax(PRST_comp.data),
+                    np.nanmax(event_cube.data),
+                ])
+                con_lev = np.arange(0, vmax / 2, 0.2)
             # =====================================================================================
 
             # #J : test print
             # print("--->>>", var, np.nanmin(event_cube.data), np.nanmax(event_cube.data), con_lev)
             # ##############
 
-            # if con_lev.size < 2:
-            #     vmin = np.nanmin(event_cube.data)
-            #     vmax = np.nanmax(event_cube.data)
+            if con_lev.size < 2:
+                vmin = np.nanmin(event_cube.data)
+                vmax = np.nanmax(event_cube.data)
 
-            #     if not np.isfinite(vmin) or not np.isfinite(vmax):
-            #         print(f"Skipping {var}: invalid data")
-            #         continue
+                if not np.isfinite(vmin) or not np.isfinite(vmax):
+                    print(f"Skipping {var}: invalid data")
+                    continue
                 
-            #     if vmin == vmax:
-            #         vmax = vmin + 1e-3
+                if vmin == vmax:
+                    vmax = vmin + 1e-3
 
-            #     con_lev = np.linspace(vmin, vmax, 5)
+                con_lev = np.linspace(vmin, vmax, 5)
 
             # #J : test print
             # print("--->>>", var, np.nanmin(event_cube.data), np.nanmax(event_cube.data), con_lev)
@@ -1792,36 +1792,10 @@ class Analogues:
             Analogues.background(ax)
             # Plotting Change
             ax= plt.subplot(len(var_list),4,(i*4)+4,projection=ccrs.PlateCarree())
-
-            # J: old code for diff_lev
-            # =====================================================================================
             Dmax = np.round(np.nanmax(np.abs([np.nanmin((PRST_comp-PAST_comp).data), np.nanmax((PRST_comp-PAST_comp).data)])))
             diff_lev = np.linspace(-Dmax, Dmax, 41)
             c1 = ax.contourf(lons, lats, (PRST_comp-PAST_comp).data, levels=diff_lev, cmap=CMAP[1], transform=ccrs.PlateCarree(), extend='both')
             c2 = ax.contourf(lons, lats, sig_field[i].data, levels=[-2, 0, 2], hatches=['////', None], colors='none', transform=ccrs.PlateCarree())
-            # =====================================================================================
-
-            # J: new code for diff_lev
-            # =====================================================================================
-            # diff = (PRST_comp - PAST_comp).data
-            # vmin = np.nanmin(diff)
-            # vmax = np.nanmax(diff)
-
-            # if not np.isfinite(vmin) or not np.isfinite(vmax):
-            #     print(f"Skipping diff plot for {var}: invalid data")
-            #     continue
-            
-            # if vmin == vmax:
-            #     # Constant difference field (very common for tp)
-            #     eps = 1e-6 if vmin == 0 else 0.01 * abs(vmin)
-            #     diff_lev = np.linspace(vmin - eps, vmax + eps, 5)
-            # else:
-            #     Dmax = np.nanmax(np.abs([vmin, vmax]))
-            #     diff_lev = np.linspace(-Dmax, Dmax, 41)     
-                     
-            # c1 = ax.contourf(lons, lats, diff, levels=diff_lev, cmap=CMAP[1], transform=ccrs.PlateCarree(), extend='both')
-            # =====================================================================================
-
             cbar = plt.colorbar(c1,fraction=0.046, pad=0.04)
             cbar.ax.tick_params()
             Analogues.background(ax)

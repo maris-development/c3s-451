@@ -1317,6 +1317,46 @@ class Analogues:
         cube.data = ma.masked_invalid(cube.data)
         return cube.collapsed(('longitude','latitude'),iris.analysis.MEAN,weights=grid_areas).data
 
+    # Processing
+    ######################################################################################
+
+    @staticmethod
+    def blue_red_ratio(z_data:iris.cube.Cube, correlation_field:np.ndarray, domain:list[float]) -> tuple[float, float]:
+        '''
+        Calculate the blue/red ratio for a given correlation field and domain
+
+        Parameters:
+            z_data (iris.cube.Cube):
+                Anomaly cube of the correlation variable with the spatial mean
+                removed at each time step.
+            correlation_field (np.ndarray):
+                Spatial field of Pearson correlation coefficients between the event
+                time series and each grid point of the correlation cube.
+            domain (list[float]):
+                Domain to subset the data on    
+
+        Returns:
+            blue, red (tuple[float, float]):
+                Blue/red ratio and the percentage of significant grid points in the domain
+        '''
+
+        X = z_data[0,:,:] 
+        X.data = correlation_field
+        Y = Analogues.extract_region(X, domain)
+
+        a,b = np.shape(Y.data)
+        blue = 0
+        red = 0
+        for i in np.arange(a):
+            for j in np.arange(b):
+                if Y.data[i,j] < 0:
+                    blue +=1
+                else:
+                    red +=1
+        
+        return (blue, red)
+
+
 
     # Plotting
     ######################################################################################

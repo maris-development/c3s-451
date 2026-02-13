@@ -1819,8 +1819,6 @@ class Plot:
                 - fig: The generated Matplotlib Figure.
                 - ax: The Matplotlib Axes object with the seasonal cycle plots.
                 - img_ax: The Axes object containing the added logo, or None if `add_logos` is False.
-
-        
         '''
 
         n_models = len(seasonal_cycles)

@@ -5,6 +5,8 @@ import pandas as pd
 import geopandas as gpd
 from typing import Any, Union, Literal, Dict, List
 import numpy as np
+
+from .data import conversions
 from .utils import Utils
 import rasterio
 from shapely.geometry import Polygon, shape
@@ -820,10 +822,11 @@ class Process:
         return adjusted_polygons
 
     @staticmethod
-    def calculate_yearly_statistics(
+    def calculate_yearly_value_xr(
         time_series: dict[str, xr.DataArray],
         yearly_value: str,              # options: "max", "mean", "min"
-        padding: int,                   # n-day rolling window
+        month_range: tuple[int, int]|None = None,  # e.g., (6, 8) for June-August, None for all months
+        padding: int=0,                   # n-day rolling window
         method: str = None              # "mean" or "sum"
     ) -> dict[str, xr.DataArray]:
         '''
@@ -873,6 +876,11 @@ class Process:
                     raise ValueError(f"Method must be 'mean' or 'sum', got '{current_method}'")
             else:
                 da_rolled = da
+
+            # subset the gdf to remove potential padding
+            if month_range is not None:
+                start_month, end_month = month_range
+                da_rolled = da_rolled.sel(time=da_rolled.time.dt.month.isin(range(start_month, end_month + 1)))
 
             # Compute yearly statistic on the rolled series
             if yearly_value == "max":
@@ -1069,7 +1077,7 @@ class Process:
 
     @staticmethod
     def compute_climate_indices(data_input, parameter, study_region, 
-                            baseline_range=("1990", "2020")):
+                            baseline_range=("1990", "2020"), padding=15, month_range: tuple[int, int]=None):
         """
         Unified processor for CMIP6 and CORDEX data.
         data_input: Can be a dict {name: ds} (CMIP6) or a list of dicts (CORDEX).
@@ -1082,7 +1090,7 @@ class Process:
             "dropped": []
         }
 
-        # 1. Normalize input to a common format: a list of (label, dataset, entry_metadata)
+        # Normalize input to a common format: a list of (label, dataset, entry_metadata)
         items_to_process = []
         if isinstance(data_input, dict):
             # Format for CMIP6
@@ -1097,12 +1105,11 @@ class Process:
         for label, ds, original_entry in items_to_process:
             print(f"Processing: {label}")
             try:
-                # 2. Extract Variable & Unit Conversion
+                # Extract Variable & Unit Conversion
                 da = ds[parameter]
                 da = Utils.wrap_lon(da)
-                da = da - 273.15 # Using the utility function we discussed!
 
-                # 3. Handle Dimensions & Coordinate Names
+                # Handle Dimensions & Coordinate Names
                 # Rename CMIP6-style coords to standard names
                 if "lat" in da.coords: da = da.rename({"lat": "latitude"})
                 if "lon" in da.coords: da = da.rename({"lon": "longitude"})
@@ -1117,24 +1124,90 @@ class Process:
 
                 da = da.sortby("time")
 
-                # 4. Product A: Spatial Climatology
-                da_clim = da.sel(time=slice(*baseline_range)).mean("time")
+                gr_daily_clim = da.sel(time=slice(*baseline_range))
 
-                # 5. Spatial Masking
+                # Product A: Spatial Climatology
+                da_clim = gr_daily_clim.mean("time")
+
+                # Spatial Masking
                 mask = regionmask.mask_geopandas(study_region, da.longitude, da.latitude)
                 ts_regional = da.where(mask == 0, drop=True)
 
-                # 6. Product B: Regional Time Series (Latitude Weighted)
+                # Product B: Regional Time Series (Latitude Weighted)
                 ts_weighted = Process.weighted_values(ts_regional, value_col=None, lat_col='latitude')
                 ts_final = ts_weighted.mean([xdim, ydim]).sortby("time")
 
-                # 7. Product C: Seasonal Cycle
-                sc = ts_final.sel(time=slice(*baseline_range)).groupby("time.dayofyear").mean()
+                # Product C: Seasonal Cycle
 
-                # 8. Store Results
-                results["seasonal_cycles"][label] = sc.compute()
-                results["spatial_maps"][label] = da_clim.compute()
-                results["time_series"][label] = ts_final.compute()
+                # Remove leap days and apply 31-day rolling mean to smooth the climatology
+                clim31d = gr_daily_clim.where(~((gr_daily_clim.time.dt.month == 2) & (gr_daily_clim.time.dt.day == 29)), drop=True)
+                days = np.arange(1, 366)
+                dayofyear = clim31d.time.dt.dayofyear
+                result_list = []
+
+                for day in days:
+                    # Build ±pad-day window (cyclically)
+                    window_days = [(day + offset - 1) % 365 + 1 for offset in range(-padding, padding + 1)]
+                    mask_days = dayofyear.isin(window_days)
+                    window_data = clim31d.sel(time=mask_days)
+
+                    stat = window_data.mean("time")
+
+                    result_list.append(stat)
+                
+                result = xr.concat(result_list, dim='dayofyear')
+                clim31d = result.assign_coords(dayofyear=days)
+
+                sc = clim31d.where(mask == 0, drop=True)
+
+                if month_range is None:
+                    start_month, end_month = 1, 12   # full year
+                else:
+                    start_month, end_month = month_range
+                # Create a dummy non-leap year to map month → doy
+                dummy_time = xr.cftime_range(start="2001-01-01", periods=365, freq="D")
+                sc = sc.assign_coords(dayofyear_time=("dayofyear", dummy_time))
+
+                if end_month >= start_month:
+                    month_mask = sc.dayofyear_time.dt.month.isin(range(start_month, end_month+1))
+                else:
+                    month_mask = sc.dayofyear_time.dt.month.isin(
+                        list(range(start_month, 13)) + list(range(1, end_month + 1))
+                    )
+
+                sc = sc.where(month_mask, drop=True)
+
+                # Drop temporary coord
+                sc = sc.drop_vars("dayofyear_time")
+
+                # Re-sort the time axis for cross-year scenarios
+                if month_range is not None and end_month < start_month:
+                    doy = sc.dayofyear
+                    sort_key = xr.where(doy < 32 * start_month, doy + 365, doy)
+                    sc = sc.sortby(sort_key)
+                sc = Process.weighted_values(sc, value_col=None, lat_col='latitude')
+                sc = sc.mean([xdim, ydim])
+
+                # Store Results
+
+                sc_out = sc.compute()
+                daclim_out = da_clim.compute()
+                tsfinal_out = ts_final.compute()
+
+                # Convert only now (small data)
+                if parameter in ["tas", "tasmin", "tasmax"]:
+                    sc_out.values = conversions.Conversions.convert_temperature(sc_out.values, "k", "c")
+                    daclim_out.values = conversions.Conversions.convert_temperature(daclim_out.values, "k", "c")
+                    tsfinal_out.values = conversions.Conversions.convert_temperature(tsfinal_out.values, "k", "c")
+                elif parameter == "pr":
+                    sc_out.values = sc_out.values * 86400
+                    daclim_out.values = daclim_out.values * 86400
+                    tsfinal_out.values = tsfinal_out.values * 86400
+                    
+
+                results["seasonal_cycles"][label] = sc_out
+                results["spatial_maps"][label] = daclim_out
+                results["time_series"][label] = tsfinal_out
                 results["processed"].append(original_entry)
                 
                 print(f"SUCCES: {label} Processed successfully.")

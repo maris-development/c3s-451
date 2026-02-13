@@ -1068,7 +1068,8 @@ class DataClient():
         if analysis_type == 'cmip6':
             exp_hist = "historical"
             exp_fut  = "ssp5_8_5"
-            gmst_fetch_fn = self.fetch_cmip6_xr  # GMST comes from CMIP6
+            gmst_fetch_fn = self.fetch_cmip6_xr
+
             
         elif analysis_type == 'cordex':
             exp_hist = "historical"
@@ -1122,12 +1123,13 @@ class DataClient():
                 # Fetch Local Variable (The Study Data)
                 if analysis_type == 'cmip6':
                     # CMIP6 Local Fetch
+                    variable_name_ = getattr(Variable.CMIP6, variable_name)   
                     ds_hist = self.fetch_cmip6_xr(
-                        variable=Variable.CMIP6.near_surface_air_temperature, model=model_id, bbox=bbox,
+                        variable=variable_name_, model=model_id, bbox=bbox,
                         time_range=hist_range, experiment=exp_hist, temporal_resolution=temp_res
                     )
                     ds_fut = self.fetch_cmip6_xr(
-                        variable=Variable.CMIP6.near_surface_air_temperature, model=model_id, bbox=bbox,
+                        variable=variable_name_, model=model_id, bbox=bbox,
                         time_range=fut_range, experiment=exp_fut, temporal_resolution=temp_res
                     )
                 else:

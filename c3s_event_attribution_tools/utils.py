@@ -944,7 +944,7 @@ class Utils:
         return "Bad", summary   
 
     @staticmethod
-    def extract_results(df, df_res, obs_sigma, obs_shape, obs_return_period, obs_event_magnitude):
+    def extract_results(parameter, df, df_res, obs_sigma, obs_shape, obs_return_period, obs_event_magnitude):
         """ 
         Compare model validation results with observations and update the DataFrame.
         df: DataFrame to update (model hub)
@@ -995,84 +995,122 @@ class Utils:
             if not p_row.empty:
                 r = p_row.iloc[0]
                 df.loc[mask, 'Past_PR'] = fmt(r, 'attr', 'PR')
-                df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-abs')
+                if parameter == 'Precipitation':
+                    df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-rel')
+                else:
+                    df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-abs')
             
             if p_row.empty:
                 p_row = m_rows[m_rows['scenario'] == 'Validation']
                 if not p_row.empty:
                     r = p_row.iloc[0]
                     df.loc[mask, 'Past_PR'] = fmt(r, 'attr', 'PR')
-                    df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-abs')
+                    if parameter == 'Precipitation':
+                        df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-rel')
+                    else:
+                        df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-abs')
 
             # C. Future Projections (using 'proj_' columns)
             f20_row = m_rows[m_rows['scenario'] == 'Future-2.0']
             if not f20_row.empty:
                 r = f20_row.iloc[0]
                 df.loc[mask, 'Fut_2.0_PR'] = fmt(r, 'proj', 'PR')
-                df.loc[mask, 'Fut_2.0_dI'] = fmt(r, 'proj', 'dI-abs')
+                if parameter == 'Precipitation':
+                    df.loc[mask, 'Fut_2.0_dI'] = fmt(r, 'proj', 'dI-rel')
+                else:
+                    df.loc[mask, 'Fut_2.0_dI'] = fmt(r, 'proj', 'dI-abs')
 
             f26_row = m_rows[m_rows['scenario'] == 'Future-2.6']
             if not f26_row.empty:
                 r = f26_row.iloc[0]
                 df.loc[mask, 'Fut_2.6_PR'] = fmt(r, 'proj', 'PR')
-                df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-abs') 
+                if parameter == 'Precipitation':
+                    df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-rel')
+                else:
+                    df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-abs') 
 
     @staticmethod
-    def create_decision_hub(df_validation, step='full', ensemble_filter='all', save_path=None):
+    def create_decision_hub(df_validation, step='full', project_filter='all', save_path=None):
         """
-        Creates an interactive table for Model Validation.
-        save_path: path to the CSV file to persist choices to disk.
+        Creates an interactive, scrollable table for Model Validation.
         """
-
         df_filtered = df_validation.copy()
-        if ensemble_filter.lower() != 'all':
-            df_filtered = df_filtered[df_filtered['ensemble'].str.lower() == ensemble_filter.lower()]
+        if project_filter.lower() != 'all':
+            df_filtered = df_filtered[df_filtered['project'].str.lower() == project_filter.lower()]
         
         rows = []
         decision_widgets = {}
 
-        # Column Widths
-        w_model, w_ens, w_val, w_res, w_drop, w_obs = '180px', '80px', '100px', '130px', '100px', '250px'
+        # 1. Define Standard Column Widths
+        w_model, w_ens, w_val, w_res, w_drop, w_obs = '280px', '80px', '100px', '130px', '110px', '250px'
+        
+        # Calculate Total Width based on step to prevent "squishing"
+        if step == 'full':
+            total_width = '1650px'
+        elif step == 'statistics':
+            total_width = '1300px'
+        else:
+            total_width = '820px'
 
-        # Build Header
-        header_list = [widgets.Label('Model', layout={'width': w_model}), widgets.Label('Ens', layout={'width': w_ens})]
+        header_list = [
+            widgets.HTML(f"<b>Model</b>", layout={'width': w_model}), 
+            widgets.HTML(f"<b>Project</b>", layout={'width': w_ens})
+        ]
 
         if step == 'full':
             header_list += [
-                widgets.Label('Seasonal', layout={'width': w_val}), widgets.Label('Spatial', layout={'width': w_val}),
-                widgets.Label('Stat Fit', layout={'width': w_val}), widgets.Label('Past PR/dI', layout={'width': w_res}),
-                widgets.Label('Fut 2.0 PR/dI', layout={'width': w_res}), widgets.Label('Fut 2.6 PR/dI', layout={'width': w_res}),
-                widgets.Label('Include?', layout={'width': w_drop}), widgets.Label('Comments', layout={'width': w_obs})
+                widgets.HTML(f'<b>Seasonal</b>', layout={'width': w_val}), 
+                widgets.HTML(f'<b>Spatial</b>', layout={'width': w_val}),
+                widgets.HTML(f'<b>Stat Fit</b>', layout={'width': w_val}), 
+                widgets.HTML(f'<b>Mag (Obs/Val)</b>', layout={'width': w_res}),
+                widgets.HTML(f'<b>Past PR/dI</b>', layout={'width': w_res}), 
+                widgets.HTML(f'<b>Fut 2.0 PR/dI</b>', layout={'width': w_res}), 
+                widgets.HTML(f'<b>Fut 2.6 PR/dI</b>', layout={'width': w_res}), 
+                widgets.HTML(f'<b>Include?</b>', layout={'width': w_drop}), 
+                widgets.HTML(f'<b>Comments</b>', layout={'width': w_obs})
+            ]
+        elif step == 'visual':
+            header_list += [ 
+                widgets.HTML(f'<b>Include?</b>', layout={'width': w_drop}), 
+                widgets.HTML(f'<b>Comments</b>', layout={'width': w_obs})
             ]
         elif step == 'statistics':
             header_list += [
-                widgets.Label('Σ', layout={'width': '80px'}), widgets.Label('ξ', layout={'width': '80px'}),
-                widgets.Label('Summary', layout={'width': '300px'}), widgets.Label('Mag (Obs/Val)', layout={'width': '100px'}),
-                widgets.Label('Include?', layout={'width': w_drop}), widgets.Label('Comments', layout={'width': w_obs})
+                widgets.HTML(f'<b>Σ</b>', layout={'width': '80px'}), 
+                widgets.HTML(f'<b>ξ</b>', layout={'width': '80px'}),
+                widgets.HTML(f'<b>Summary</b>', layout={'width': '300px'}), 
+                widgets.HTML(f'<b>Mag (Obs/Val)</b>', layout={'width': w_res}),
+                widgets.HTML(f'<b>Include?</b>', layout={'width': w_drop}), 
+                widgets.HTML(f'<b>Comments</b>', layout={'width': w_obs})
             ]
         else:
             header_list.extend([
-                widgets.Label(f"{step.capitalize()} Score", layout={'width': '120px'}),
-                widgets.Label('Include?', layout={'width': w_drop}), 
-                widgets.Label('Comments', layout={'width': w_obs})
+                widgets.HTML(f"<b>{step.capitalize()} Score</b>", layout={'width': '120px'}), 
+                widgets.HTML(f'<b>Include?</b>', layout={'width': w_drop}), 
+                widgets.HTML(f'<b>Comments</b>', layout={'width': w_obs})
             ])
-        header = widgets.HBox(header_list, layout={'background_color': '#f0f0f0', 'margin': '5px 0px'})
+
+        header = widgets.HBox(header_list, layout={
+            'background_color': '#f0f0f0', 
+            'border_bottom': '2px solid #444444', 
+            'padding': '5px 0px'
+        })
         
+
         for idx, row in df_filtered.iterrows():
-            line_items = [widgets.Label(row['model'], layout={'width': w_model}), widgets.Label(row['ensemble'], layout={'width': w_ens})]
+            # Using HTML for Model/Ens instead of Label to ensure same height/alignment as status tags
+            line_items = [
+                widgets.HTML(f"<div>{row['model']}</div>", layout={'width': w_model, 'height': '32px'}), 
+                widgets.HTML(f"<div>{row['project']}</div>", layout={'width': w_ens, 'height': '32px'})
+            ]
             decision_widgets[row['model']] = {}
 
-            # Check if we already have a value, otherwise use default
+            # Default Include logic
             current_inc = row.get('Include T/F')
             current_obs = row.get('Comments', '')
-            
-            # Logic for default "Include" if nothing is saved yet
-            if step == 'statistics':
-                default_inc = True if row['sigma_validation'] != 'Bad' and row['shape_validation'] != 'Bad' else False
-            else:
-                default_inc = True if row['Stat Fit'] != 'Bad' else False
 
-            # Define widgets with existing values if they exist
+            default_inc = True 
+
             inc_drop = widgets.Dropdown(
                 options=[True, False], 
                 value=current_inc if pd.notna(current_inc) and current_inc in [True, False] else default_inc, 
@@ -1084,20 +1122,26 @@ class Utils:
                 for p in ['sigma_validation', 'shape_validation']:
                     val = str(row.get(p, 'Pending'))
                     color = 'green' if val == 'Good' else 'orange' if val == 'Reasonable' else 'red'
-                    line_items.append(widgets.HTML(f"<b style='color:{color}'>{val}</b>", layout={'width': '80px'}))
+                    line_items.append(widgets.HTML(f"<div><b style='color:{color}'>{val}</b></div>", layout={'width': '80px'}))
                 
-                line_items.append(widgets.HTML(f"<small>{row.get('validation_summary', '')}</small>", layout={'width': '300px'}))
-                line_items.append(widgets.HTML(f"<small>{row.get('Magnitude (Obs / Validation)', 'N/A')}</small>", layout={'width': '100px'}))
+                line_items.append(widgets.HTML(f"<div style='padding-left:8px; line-height:14px; display:flex; align_items:center; height:32px;'><small>{row.get('validation_summary', '')}</small></div>", layout={'width': '300px'}))
+                line_items.append(widgets.HTML(f"<div><small>{row.get('Magnitude (Obs / Validation)', 'N/A')}</small></div>", layout={'width': w_res}))
+                line_items.extend([inc_drop, obs_text])
+
+            elif step == 'visual':
                 line_items.extend([inc_drop, obs_text])
 
             elif step == 'full':
                 for col in ['Seasonal cycle', 'Spatial maps', 'Stat Fit']:
                     val = str(row.get(col, 'Pending'))
                     color = 'green' if val == 'Good' else 'orange' if val == 'Reasonable' else 'red'
-                    line_items.append(widgets.HTML(f"<b style='color:{color}'>{val}</b>", layout={'width': w_val}))
-
+                    line_items.append(widgets.HTML(f"<div><b style='color:{color}'>{val}</b></div>", layout={'width': w_val}))
+                
+                line_items.append(widgets.HTML(f"<div><small>{row.get('Magnitude (Obs / Validation)', 'N/A')}</small></div>", layout={'width': w_res}))
+                
                 for prefix in ['Past', 'Fut_2.0', 'Fut_2.6']:
-                    line_items.append(widgets.HTML(f"<small>PR: {row.get(f'{prefix}_PR', 'N/A')}<br>dI: {row.get(f'{prefix}_dI', 'N/A')}</small>", layout={'width': w_res}))
+                    val_str = f"PR: {row.get(f'{prefix}_PR', 'N/A')}<br>dI: {row.get(f'{prefix}_dI', 'N/A')}"
+                    line_items.append(widgets.HTML(f"<div style='padding-left:8px; line-height:14px; display:flex; align_items:center; height:32px;'><small>{val_str}</small></div>", layout={'width': w_res}))
                 
                 line_items.extend([inc_drop, obs_text])
 
@@ -1108,14 +1152,39 @@ class Utils:
                 drop = widgets.Dropdown(options=['Good', 'Reasonable', 'Bad'], value=s_val, layout={'width': '120px'})
                 line_items.append(drop)
                 decision_widgets[row['model']][step] = drop
-
                 line_items.extend([inc_drop, obs_text])
 
             decision_widgets[row['model']]['include'] = inc_drop
             decision_widgets[row['model']]['obs'] = obs_text
-            rows.append(widgets.HBox(line_items))
+            
+            # Assemble Row with Vertical Margins and Zebra Striping
+            row_box = widgets.HBox(
+                line_items, 
+                layout={
+                    'border_bottom': '1px solid #cccccc', 
+                    'padding': '6px 0px',
+                    'background_color': '#ffffff' if idx % 2 == 0 else '#fafafa'
+                }
+            )
+            rows.append(row_box)
         
-        save_button = widgets.Button(description=f"💾 Save {step.capitalize()}", button_style='success')
+        # 4. Create the Scrollable Table Container
+        table_body = widgets.VBox(rows, layout={'width': total_width})
+        table_full = widgets.VBox([header, table_body], layout={'width': total_width})
+        
+        # This wrapper allows the table to be wider than the screen
+        scrollable_wrapper = widgets.VBox(
+            [table_full], 
+            layout={
+                'overflow_x': 'auto', 
+                'width': '100%', 
+                'border': '1px solid #cccccc',
+                'margin': '10px 0px'
+            }
+        )
+
+        # 5. Buttons and Output
+        save_button = widgets.Button(description=f"💾 Save {step.capitalize()}", button_style='success', layout={'margin': '10px 0px'})
         output = widgets.Output()
         
         def on_save_clicked(b):
@@ -1128,7 +1197,6 @@ class Utils:
                     if 'include' in w: df_validation.loc[mask, 'Include T/F'] = w['include'].value
                     if 'obs' in w: df_validation.loc[mask, 'Comments'] = w['obs'].value
                 
-                # PERSISTENCE TO DISK
                 if save_path:
                     df_validation.to_csv(save_path, index=False)
                     print(f"✅ Changes saved to memory AND disk: {save_path}")
@@ -1136,8 +1204,33 @@ class Utils:
                     print(f"✅ Changes saved to memory")
 
         save_button.on_click(on_save_clicked)
-        display(widgets.VBox([widgets.HTML(f"<h3>Step 4: {step.capitalize()} Validation Hub</h3>"), header, widgets.VBox(rows), save_button, output]))
+        
+        
+        # Final Display
+        ui = widgets.VBox([
+            widgets.HTML(f"<h3>Step 4: {step.capitalize()} Validation Hub</h3>"), 
+            scrollable_wrapper, 
+            save_button, 
+            output
+        ])
+        display(ui)
 
+    @staticmethod
+    def var_map(parameter, model):
+        VAR_MAP = {
+            "Tmean":         {"cordex": "tas",    "cmip6": "near_surface_air_temperature", "era5": "temperature_2m_mean"},
+            "Tmin":          {"cordex": "tasmin", "cmip6": "daily_minimum_near_surface_air_temperature", "era5": "temperature_2m_min"},
+            "Tmax":          {"cordex": "tasmax", "cmip6": "daily_maximum_near_surface_air_temperature", "era5": "temperature_2m_max"},
+            "Precipitation": {"cordex": "pr",     "cmip6": "precipitation", "era5": "total_precipitation"},
+        }
+
+        entry = VAR_MAP.get(parameter, {model: parameter})
+        
+        if model not in entry:
+            raise ValueError(f"Model '{model}' not found for parameter '{parameter}'. "
+                            f"Available models: {list(entry.keys())}")
+                            
+        return entry[model]
     
     @staticmethod
     def get_cordex_domain_configs():

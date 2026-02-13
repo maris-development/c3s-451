@@ -1039,3 +1039,167 @@ class DataClient():
         return self.cds_client.fetch_monthly_single_levels_cmip5_gpd(
             experiment, variable, model, ensemble_member, period
         )
+
+    def fetch_climate_scenarios(self,
+        analysis_type,
+        models, 
+        variable_name, 
+        bbox, 
+        hist_range=(datetime(1950, 1, 1), datetime(2005, 12, 31)),
+        fut_range=(datetime(2006, 1, 1), datetime(2100, 12, 31)),
+        temp_res="daily",
+        max_models=None
+    ):
+        """
+        Unified fetcher for CMIP6 and CORDEX data.
+        
+        Parameters:
+        - analysis_type: 'cmip6' or 'cordex'
+        - models: 
+            If 'cmip6': List of model names (strings).
+            If 'cordex': List of dictionaries containing {'hist_url', 'rcp85_url', 'driving_model'}.
+        """
+        
+        results_local = {}
+        results_gmst = {}
+        processed_count = 0
+
+        # Configuration based on Analysis Type
+        if analysis_type == 'cmip6':
+            exp_hist = "historical"
+            exp_fut  = "ssp5_8_5"
+            gmst_fetch_fn = self.fetch_cmip6_xr  # GMST comes from CMIP6
+            
+        elif analysis_type == 'cordex':
+            exp_hist = "historical"
+            exp_fut  = "rcp85"
+            gmst_fetch_fn = self.fetch_cmip5_monthly_single_levels_xr  # GMST comes from CMIP5 (Driver)
+            
+        else:
+            raise ValueError("analysis_type must be 'cmip6' or 'cordex'")
+
+        print(f"\n--- Starting {analysis_type.upper()} Processing (Exp: {exp_fut}) ---")
+
+        gcm_map = Utils.get_gcm_cordex_to_cmip5()
+        # 2. Main Loop
+        for entry in models:
+            if max_models and processed_count >= max_models:
+                break
+
+            model_id = None
+            driving_model = None       
+            if analysis_type == 'cmip6':
+                model_id = entry 
+                driving_model = entry
+            else:
+                # CORDEX Logic
+                gcm = entry.get('gcm', 'UnknownGCM')
+                rcm = entry.get('rcm', 'UnknownRCM')
+                ensemble = entry.get('member', 'UnknownMember')
+                model_id = f"{gcm}_{rcm}"
+                
+                # 2. Map to CMIP5 name
+                if gcm in gcm_map:
+                    gcm_conf = gcm_map[gcm]
+                    driving_model = gcm_conf['driving_model']
+
+                    if ensemble in gcm_conf['ensembles']:
+                        ens_cfg = gcm_conf['ensembles'][ensemble]
+                        hist_periods = ens_cfg['historical']  
+                        rcp_periods = ens_cfg['rcp_8_5']
+
+                    else:
+                        driving_model = None
+
+                # 3. Explicit check if the mapping failed
+                if not driving_model:
+                    print(f"⚠️ Skipping {model_id}: Driving GCM '{gcm}' not found in CMIP5 mapping.")
+                    continue
+
+            try:
+                print(f"Processing: {model_id}...")
+
+                # Fetch Local Variable (The Study Data)
+                if analysis_type == 'cmip6':
+                    # CMIP6 Local Fetch
+                    ds_hist = self.fetch_cmip6_xr(
+                        variable=Variable.CMIP6.near_surface_air_temperature, model=model_id, bbox=bbox,
+                        time_range=hist_range, experiment=exp_hist, temporal_resolution=temp_res
+                    )
+                    ds_fut = self.fetch_cmip6_xr(
+                        variable=Variable.CMIP6.near_surface_air_temperature, model=model_id, bbox=bbox,
+                        time_range=fut_range, experiment=exp_fut, temporal_resolution=temp_res
+                    )
+                else:
+                    # CORDEX Local Fetch (via URL)
+                    ds_hist = self.fetch_cordex_xr(
+                        variable=variable_name, model_url=entry["hist_url"], bbox=bbox, time_range=hist_range
+                    )
+                    ds_fut = self.fetch_cordex_xr(
+                        variable=variable_name, model_url=entry["rcp85_url"], bbox=bbox, time_range=fut_range
+                    )
+
+                # Merge Local
+                local_merged = xr.concat([ds_hist, ds_fut], dim="time", combine_attrs="override")
+
+                # Fetch Global Mean Surface Temp (GMST)
+                if driving_model is not None:
+                    if analysis_type == 'cmip6':
+                        print(f"   -> Fetching GMST for {driving_model}...")
+                        gmst_hist = gmst_fetch_fn(
+                            variable=Variable.CMIP6.near_surface_air_temperature, model=driving_model, bbox=(-180, -90, 180, 90),
+                            time_range=hist_range, experiment="historical", temporal_resolution="monthly"
+                        )
+                        gmst_fut = gmst_fetch_fn(
+                            variable=Variable.CMIP6.near_surface_air_temperature, model=driving_model, bbox=(-180, -90, 180, 90),
+                            time_range=fut_range, experiment=exp_fut, temporal_resolution="monthly"
+                        )
+                        gmst_merged = xr.concat([gmst_hist, gmst_fut], dim="time", combine_attrs="override")
+                    
+                    if analysis_type == 'cordex':
+                        print(f"   -> Fetching GMST for {driving_model} (CMIP5)...")
+                        gmst_hist = []
+                        for period in hist_periods:
+                            print(f"      - Historical Period: {period}")
+                            chunk = gmst_fetch_fn(
+                                experiment="historical", variable=Variable.CMIP5Monthly.temperature_2m,
+                                model=driving_model, ensemble_member=ensemble, period=period
+                            )
+                            gmst_hist.append(chunk)
+                        gmst_hist = xr.concat(gmst_hist, dim="time")
+                        gmst_hist = gmst_hist.convert_calendar("standard", use_cftime=False)
+                        gmst_hist = gmst_hist.interpolate_na(dim="time", method="linear")
+                        # subset to hist_range
+                        gmst_hist = gmst_hist.sel(time=slice(hist_range[0], hist_range[1]))
+                        gmst_fut = []
+                        for period in rcp_periods:
+
+                            print(f"      - RCP8.5 Period: {period}")
+                            chunk = gmst_fetch_fn(
+                                experiment="rcp_8_5", variable=Variable.CMIP5Monthly.temperature_2m,
+                                model=driving_model, ensemble_member=ensemble, period=period
+                            )
+                            gmst_fut.append(chunk)
+                        gmst_fut = xr.concat(gmst_fut, dim="time")
+                        gmst_fut = gmst_fut.convert_calendar("standard", use_cftime=False)
+                        gmst_fut = gmst_fut.interpolate_na(dim="time", method="linear")
+                        # subset to fut_range
+                        gmst_fut = gmst_fut.sel(time=slice(fut_range[0], fut_range[1]))
+                        gmst_merged = xr.concat([gmst_hist, gmst_fut], dim="time", combine_attrs="override")
+                else:
+                    print(f"   ⚠️ Skipping GMST: No driving model provided.")
+                    gmst_merged = None
+
+                # Store Results 
+                results_local[model_id] = local_merged
+                if gmst_merged is not None:
+                    results_gmst[model_id] = gmst_merged
+                
+                processed_count += 1
+                print(f"   ✅ Success: {model_id}")
+
+            except Exception as e:
+                print(f"   ❌ Failed {model_id}: {str(e)}")
+                continue
+
+        return results_local, results_gmst

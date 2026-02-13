@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+from pathlib import Path
+from collections import defaultdict
 import pandas as pd
 import geopandas as gpd
 from typing import Any, Union, Literal, Dict, List
@@ -8,7 +10,10 @@ import rasterio
 from shapely.geometry import Polygon, shape
 import xarray as xr
 from shapely import contains_xy
+import re
+import regionmask
 from scipy.stats import chi2
+from rpy2.robjects import r
 
 
 class Process:
@@ -355,7 +360,6 @@ class Process:
                     mean_vals = mean_vals.replace(0, np.nan)
                     group[f"{value_col}_ci_lower"] = std_lower / mean_vals
                     group[f"{value_col}_ci_upper"] = std_upper / mean_vals
-
 
             return group
 
@@ -971,3 +975,344 @@ class Process:
             gmst_complete.loc[idx, gmst_value_col] = missing_clim + anomaly
 
         return gmst_complete.reset_index().rename(columns={"index": datetime_col})
+    
+    @staticmethod
+    def build_cordex_model_pairs(catalog_file: Path, domain_input, experiments=("hist", "rcp85"), temporal_filter: str = "day"):
+        """
+        Finds models for specific domains or domain prefixes (e.g., 'EUR' finds 'EUR-11').
+        Prioritizes highest resolution (lowest number) for each GCM-RCM pair.
+        """
+        # Normalize input to a list of uppercase prefixes
+        if isinstance(domain_input, str):
+            prefixes = [domain_input.upper().replace("-", "")]
+        else:
+            prefixes = [d.upper().replace("-", "") for d in domain_input]
+
+        grouped = defaultdict(dict)
+
+        with catalog_file.open("r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                url = raw_line.strip()
+                if not url or url.startswith("#"): continue
+
+                descriptor = Path(url).parts[-2]
+                try:
+                    dom_code, exp_code, temp_res, remainder = descriptor.split("-", 3)
+                except ValueError: continue
+
+                # 1. Match Prefix (e.g., EUR-11 starts with EUR)
+                clean_dom = dom_code.upper().replace("-", "")
+                if not any(clean_dom.startswith(p) for p in prefixes):
+                    continue
+
+                if temporal_filter and temp_res.lower() != temporal_filter:
+                    continue
+
+                exp_code = exp_code.lower()
+                if exp_code not in experiments:
+                    continue
+
+                try:
+                    gcm_rcm, member = remainder.rsplit("-", 1)
+                    gcm, rcm = gcm_rcm.split("-", 1)
+                except ValueError: continue
+
+                # Extract numeric resolution for priority (EUR11 -> 11, AFR44 -> 44)
+                res_match = re.search(r'(\d+)$', clean_dom)
+                res_val = int(res_match.group(1)) if res_match else 999
+
+                key = (clean_dom, gcm, rcm, member, temp_res.lower(), res_val)
+                grouped[key][exp_code] = url
+
+        model_list = []
+        for (dom, gcm, rcm, mem, temp, res), entries in grouped.items():
+            if all(exp in entries for exp in experiments):
+                model_list.append({
+                    "domain": dom,
+                    "gcm": gcm,
+                    "rcm": rcm,
+                    "member": mem,
+                    "temporal": temp,
+                    "res_value": res,  # Store for sorting/filtering
+                    "hist_url": entries["hist"],
+                    "rcp85_url": entries["rcp85"],
+                })
+
+        # Priority 1: Member Order
+        member_order = ["r1i1p1", "r2i1p1", "r3i1p1", "r6i1p1", "r12i1p1", "r0i0p0"]
+        mem_prio = {m: i for i, m in enumerate(member_order)}
+
+        # 2. Filter logic: Highest Resolution (Lowest res_value) + Member Priority
+        # We group by (GCM, RCM) to find the best available version across domains
+        best_models = {}
+        for entry in model_list:
+            # Use GCM and RCM as the identifying key
+            key = (entry["gcm"], entry["rcm"])
+            
+            if key not in best_models:
+                best_models[key] = entry
+            else:
+                existing = best_models[key]
+                
+                # Condition A: Current has HIGHER resolution (e.g. 11 < 44)
+                if entry["res_value"] < existing["res_value"]:
+                    best_models[key] = entry
+                
+                # Condition B: Same resolution, but better member priority
+                elif entry["res_value"] == existing["res_value"]:
+                    if mem_prio.get(entry["member"], 999) < mem_prio.get(existing["member"], 999):
+                        best_models[key] = entry
+
+        return sorted(list(best_models.values()), 
+                    key=lambda item: (item["domain"], item["gcm"], item["rcm"]))
+
+
+    @staticmethod
+    def compute_climate_indices(data_input, parameter, study_region, 
+                            baseline_range=("1990", "2020")):
+        """
+        Unified processor for CMIP6 and CORDEX data.
+        data_input: Can be a dict {name: ds} (CMIP6) or a list of dicts (CORDEX).
+        """
+        results = {
+            "seasonal_cycles": {},
+            "spatial_maps": {},
+            "time_series": {},
+            "processed": [],
+            "dropped": []
+        }
+
+        # 1. Normalize input to a common format: a list of (label, dataset, entry_metadata)
+        items_to_process = []
+        if isinstance(data_input, dict):
+            # Format for CMIP6
+            for name, ds in data_input.items():
+                items_to_process.append((name, ds, name))
+        else:
+            # Format for CORDEX
+            for entry in data_input:
+                label = f"{entry['gcm']}\n{entry['rcm']}"
+                items_to_process.append((label, entry["experiment_data"], entry))
+
+        for label, ds, original_entry in items_to_process:
+            print(f"Processing: {label}")
+            try:
+                # 2. Extract Variable & Unit Conversion
+                da = ds[parameter]
+                da = Utils.wrap_lon(da)
+                da = da - 273.15 # Using the utility function we discussed!
+
+                # 3. Handle Dimensions & Coordinate Names
+                # Rename CMIP6-style coords to standard names
+                if "lat" in da.coords: da = da.rename({"lat": "latitude"})
+                if "lon" in da.coords: da = da.rename({"lon": "longitude"})
+                
+                # Detect spatial dimensions for averaging (Native Grid Handling)
+                if "rlon" in da.dims:
+                    xdim, ydim = ["rlon", "rlat"]
+                elif "x" in da.dims:
+                    xdim, ydim = ["x", "y"]
+                else:
+                    xdim, ydim = ["longitude", "latitude"]
+
+                da = da.sortby("time")
+
+                # 4. Product A: Spatial Climatology
+                da_clim = da.sel(time=slice(*baseline_range)).mean("time")
+
+                # 5. Spatial Masking
+                mask = regionmask.mask_geopandas(study_region, da.longitude, da.latitude)
+                ts_regional = da.where(mask == 0, drop=True)
+
+                # 6. Product B: Regional Time Series (Latitude Weighted)
+                ts_weighted = Process.weighted_values(ts_regional, value_col=None, lat_col='latitude')
+                ts_final = ts_weighted.mean([xdim, ydim]).sortby("time")
+
+                # 7. Product C: Seasonal Cycle
+                sc = ts_final.sel(time=slice(*baseline_range)).groupby("time.dayofyear").mean()
+
+                # 8. Store Results
+                results["seasonal_cycles"][label] = sc.compute()
+                results["spatial_maps"][label] = da_clim.compute()
+                results["time_series"][label] = ts_final.compute()
+                results["processed"].append(original_entry)
+                
+                print(f"SUCCES: {label} Processed successfully.")
+
+            except Exception as exc:
+                results["dropped"].append(original_entry)
+                print(f"ERROR: {label} Failed: {exc}")
+                continue
+
+        return results
+    
+    @staticmethod
+    def compute_gmst_anomalies(gmst_dict, event_year, year_range=(1951, 2100), window=4):
+        """
+        Computes yearly GMST rolling anomalies relative to a specific event year.
+        Compatible with CMIP5 and CMIP6 'tas' datasets.
+        
+        Parameters:
+        - gmst_dict: Dictionary {model_name: xarray_dataset}
+        - event_year: The year to set as 0.0 anomaly (e.g., 2025)
+        - year_range: Tuple of (start_year, end_year)
+        - window: Size of the rolling mean window
+        """
+        results = {}
+        
+        for model_name, ds in gmst_dict.items():
+            print(f"Calculating GMST anomalies for: {model_name}")
+            try:
+                # Extract variable and convert units
+                da = ds['tas']
+                da = da - 273.15  # Convert from Kelvin to Celsius 
+
+                # Standardize coordinate names for CMIP5/6 compatibility
+                if "lat" in da.coords: da = da.rename({"lat": "latitude"})
+                if "lon" in da.coords: da = da.rename({"lon": "longitude"})
+
+                # Spatial Average (Latitude Weighted)
+                gmst_monthly = Process.weighted_values(da, value_col=None, lat_col='latitude')
+                gmst_monthly = gmst_monthly.mean(["longitude", "latitude"]).sortby("time")
+
+                # Temporal Aggregation (Annual)
+                gmst_yearly = gmst_monthly.groupby("time.year").mean().compute()
+                
+                # Convert to DataFrame and Clean
+                df_yearly = gmst_yearly.to_dataframe(name='gmst').reset_index()
+                # Ensure we only have necessary columns (handling optional 'height' or 'level' dims)
+                df_yearly = df_yearly[['year', 'gmst']]
+
+                # Apply Rolling Window
+                df_rolled = Process.calculate_rolling_window(
+                    gdf=df_yearly, value_col='gmst', datetime_col="year", 
+                    window=window, min_periods=2, centering=True, method="mean"
+                )
+
+                # Subset to Study Period
+                df_subset = Utils.subset_gdf(
+                    gdf=df_rolled, datetime_col="year", 
+                    date_range=(year_range[0], year_range[1])
+                ).copy()
+
+                # Calculate Anomaly relative to Event Year
+                try:
+                    ref_val = df_subset.loc[df_subset["year"] == event_year, "gmst"].values[0]
+                    df_subset["gmst"] = df_subset["gmst"] - ref_val
+                    results[model_name] = df_subset
+                    print(f"SUCCES: GMST anomaly calculated (Ref {event_year}: {ref_val:.2f}°C)")
+                except IndexError:
+                    print(f"WARNING: Event year {event_year} not found in model {model_name} range.")
+                    continue
+
+            except Exception as e:
+                print(f"ERROR: Failed to process GMST for {model_name}: {e}")
+                
+        return results
+    
+    @staticmethod
+    def analyze_extreme_scenario():
+        r_code = """
+        analyze_extreme_scenario <- function(model_name, rp, model_df, gmst_df, 
+                                            y_start, y_end, y_now, nsamp,dGMST_target, 
+                                            scenario_label, save_dir) {
+            
+            cat(paste0("   Scenario [", scenario_label, "]: Years ", y_start, "-", y_end, "\n"))
+            
+            # 1. Subset and Merge
+            m_sub <- model_df[model_df$year >= y_start & model_df$year <= y_end, ]
+            g_sub <- gmst_df[gmst_df$year >= y_start & gmst_df$year <= y_end, ]
+            df <- merge_model_gmst(m_sub, g_sub)
+            
+            if (nrow(df) < 20) return(NULL)
+
+            # 2. Fit Model
+            mdl <- tryCatch({
+                # Try first with the default optimization method
+                fit_ns(dist = "gev", type = "shift", data = df, 
+                    varnm = "value", covnm = "gmst", lower = FALSE)
+            }, error = function(e) {
+                # If default fails, try again using Nelder-Mead
+                message(paste("WARNING: Default fit failed for", model_name, "- trying Nelder-Mead..."))
+                tryCatch({
+                    fit_ns(dist = "gev", type = "shift", data = df, 
+                        varnm = "value", covnm = "gmst", lower = FALSE, 
+                        method = "Nelder-Mead")
+                }, error = function(e2) {
+                    return(NULL) # If both fail, return NULL
+                })
+            })
+
+            if (is.null(mdl)) return(NULL)
+
+            # 3. Define Covariates (CRITICAL FIX: drop=F keeps it as a DataFrame)
+            # This prevents the "incorrect number of dimensions" error
+            cov_now <- gmst_df[gmst_df$year == y_now, "gmst", drop = F]
+            
+            if (nrow(cov_now) == 0) {
+                # Fallback: ensure it remains a 1-column dataframe
+                val <- tail(df$gmst, 1)
+                cov_now <- data.frame(gmst = val)
+            }
+            
+            # Math on dataframes preserves the dataframe structure in R
+            cov_hist <- cov_now - 1.3
+            cov_fut  <- cov_now + dGMST_target
+
+            # 4. Extract Results
+            res <- tryCatch({
+                cmodel_results(mdl, rp = rp, 
+                            cov_f = cov_now, 
+                            cov_hist = cov_hist, 
+                            cov_fut = cov_fut, 
+                            y_now = y_now, y_start = y_start, y_fut = y_end, nsamp = nsamp)
+            }, error = function(e) {
+                cat("ERROR: Extraction failed:", e$message, "\n")
+                return(NULL)
+            })
+
+            if (!is.null(res)) {
+                res_df <- as.data.frame((unlist(res)))
+                
+                # Add identifiers
+                res_df$scenario <- scenario_label
+                res_df$model <- model_name
+                
+                # 5. Plotting
+                tryCatch({
+                    fname <- file.path(save_dir, paste0(model_name, "_", scenario_label, ".png"))
+                    val_to_plot <- unlist(res)[,"rp_value"]
+                    
+                    # Use 'cov_hist' (cov_cf) exactly like your original loop
+                    png(fname, width = 480, height = 360)
+                    plot_returnlevels(mdl, cov_f = cov_now, cov_cf = cov_hist, 
+                                    ev = val_to_plot, nsamp = 100, main = paste(model_name, scenario_label))
+                    dev.off()
+                }, error = function(e) if (dev.cur() > 1) dev.off())
+                
+                return(res_df)
+            }
+            return(NULL)
+        }
+            """
+        r(r_code)
+
+    @staticmethod
+    def merge_model_gmst():
+        r_code = """
+        merge_model_gmst <- function(model_df, gmst_df) {
+            
+            # model_df has: time (POSIXct), value (tasmax)
+            # gmst_df has: year, gmst
+            # merge on year
+            out <- merge(
+                model_df[, c("year", "value")],
+                gmst_df,
+                by = "year",
+                all = FALSE
+            )
+            
+            return(out)
+        }
+        """
+        r(r_code)

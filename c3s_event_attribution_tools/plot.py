@@ -25,6 +25,7 @@ import cmocean
 import matplotlib.image as mpimg
 from matplotlib.colors import LogNorm
 import matplotlib.patches as mpatches
+import matplotlib.lines as mlines
 from IPython.display import display, clear_output
 import re
 from shapely.geometry import box
@@ -1602,6 +1603,98 @@ class Plot:
             return fig, axes, img_ax
         else:
             return fig, axes
+    
+    @staticmethod
+    def plot_cordex_map(gdf, domains_dict, bbox, study_region, mapproj, selected_domain=None, add_logos=True):
+        """
+        Plots CORDEX domains, highlighting the selected domain,
+        the bounding box, and the study region.
+        """
+        # Setup the figure
+        fig, ax = plt.subplots(figsize=(16, 9), dpi=100, 
+                            subplot_kw={"projection": mapproj})
+
+        ax.set_global() 
+        ax.coastlines(resolution='110m', color='black', linewidth=0.5)
+        ax.stock_img()
+
+        legend_handles = []
+
+        # Plot ALL domains
+        for r in domains_dict.keys():
+            dom_row = gdf.loc[[r]]
+            
+            # Style logic
+            is_selected = (r == selected_domain)
+            line_width = 4 if is_selected else 1.2
+            alpha_val = 1.0 if is_selected else 0.3
+            z_order = 5 if is_selected else 3
+            
+            native_projection = domains_dict[r]["projection"]
+            color = domains_dict[r]["colour"]
+            
+            # Plot the boundary
+            boundary = dom_row.to_crs(native_projection).boundary
+            
+            # Base plot for all domains
+            boundary.plot(ax=ax, 
+                        transform=native_projection, 
+                        color=color, 
+                        linewidth=2 if not is_selected else line_width, 
+                        alpha=0.5 if not is_selected else alpha_val,
+                        zorder=z_order)
+
+            # Update legend
+            label_text = f"{r}: {domains_dict[r]['long_name']}"
+            if is_selected:
+                label_text += " (Recommended)"
+            
+            legend_handles.append(mpatches.Patch(color=color, alpha=alpha_val, label=label_text))
+
+        # Plot the Bounding Box (bbox) with the marker 'o'
+        ax.plot([bbox[0], bbox[2], bbox[2], bbox[0], bbox[0]], 
+                [bbox[1], bbox[1], bbox[3], bbox[3], bbox[1]], 
+                color="darkred", lw=2, alpha=1, marker='o', transform=mapproj, zorder=10)
+
+        # Plot the Study Region
+        study_region.boundary.plot(ax=ax, transform=mapproj, color="green", lw=2, alpha=1.0, zorder=11)
+
+        # Add Custom Line Legend Items
+        legend_handles.append(mlines.Line2D([], [], color='green', lw=2, label='Study Region'))
+        legend_handles.append(mlines.Line2D([], [], color='darkred', lw=2, marker='o', label='Bounding Box'))
+
+        # Dynamic Zoom Logic
+        if selected_domain:
+            bounds = gdf.loc[selected_domain, 'geometry'].bounds
+            pad = 10
+            ax.set_extent([bounds[0]-pad, bounds[2]+pad, bounds[1]-pad, bounds[3]+pad], crs=mapproj)
+        else:
+            buffer = 30 
+            ax.set_extent([bbox[0]-buffer, bbox[2]+buffer, bbox[1]-buffer, bbox[3]+buffer], crs=mapproj)
+
+        # Final Formatting
+        gl = ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False, alpha=0.2)
+        gl.top_labels = False
+        gl.right_labels = False
+
+        
+        leg = plt.legend(handles=legend_handles, loc='upper left', bbox_to_anchor=(1.02, 1), 
+                        title="CORDEX Domains", fontsize='small')
+        for text in leg.get_texts():
+            if "(Recommended)" in text.get_text():
+                text.set_weight("bold")
+                text.set_size("medium")
+
+        plt.title("CORDEX Domains & Study Area", fontsize=18, pad=20)
+        plt.tight_layout()
+
+        # Logos and Return
+        if add_logos:
+            plt.close(fig)
+            fig, img_ax = Plot.add_image_below(fig=fig, image_path=LOGO_HORIZON_PATH, pad_frac=-0.02)
+            return fig, ax, img_ax
+        else:
+            return fig, ax
 
     @staticmethod
     def plot_koppen_geiger(

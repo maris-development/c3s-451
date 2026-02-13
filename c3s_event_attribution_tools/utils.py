@@ -7,12 +7,17 @@ from urllib.parse import urlencode
 from typing import Dict, Any
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
+from shapely.geometry import Polygon, box
 import base64
 from io import BytesIO
 from .plot import *
 import os
 import warnings
 
+from typing import Dict, Union
+import xarray as xr
+import ipywidgets as widgets
+from IPython.display import display, clear_output
 
 class Utils:
     """Utility class for various geospatial & temporal data operations, including region selection and data manipulation, splitting time ranges, etc."""
@@ -828,3 +833,441 @@ class Utils:
 
         # Dataset already uses pandas / numpy datetime
         return pd.Timestamp(dt).to_pydatetime()
+    
+    @staticmethod
+    def find_covering_domain(gdf, study_region, bbox_coords):
+        """Identifies which domain fully contains the study area."""
+        bbox_poly = box(*bbox_coords)
+        study_geom = study_region.geometry.union_all()
+        
+        covering = []
+        for index, row in gdf.iterrows():
+            if row['geometry'].contains(bbox_poly) and row['geometry'].contains(study_geom):
+                covering.append(index)
+                
+        if covering:
+            # Return the one with the smallest area (tightest fit)
+            return min(covering, key=lambda d: gdf.loc[d, 'geometry'].area)
+        return None
+    
+    @staticmethod
+    def create_cordex_gdf(domains_dict, base_crs):
+        """Converts the dictionary into a GeoDataFrame."""
+        return gpd.GeoDataFrame(
+            index=domains_dict.keys(),
+            geometry=[Polygon(shell=v["vertices"].values()) for v in domains_dict.values()],
+            data={
+                "projection": [v["projection"] for v in domains_dict.values()],
+                "colour": [v["colour"] for v in domains_dict.values()],
+                "long_name": [v["long_name"] for v in domains_dict.values()]
+            },
+            crs=base_crs
+        )
+    
+    @staticmethod
+    def convert_series_to_dfs(
+        series_dict: Dict[str, Union[xr.DataArray, xr.Dataset]], 
+        value_name: str = "value"
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Converts a dictionary of xarray objects into a dictionary of cleaned pandas DataFrames.
+
+        Args:
+            series_dict: Dictionary where keys are model names and values are xarray DataArrays/Datasets.
+            value_name: The name to assign to the data column. Defaults to "value".
+
+        Returns:
+            A dictionary of pandas DataFrames indexed by model names.
+        """
+        df_dict = {}
+
+        for name, obj in series_dict.items():
+            try:
+                # Ensure we are working with a DataArray
+                if isinstance(obj, xr.Dataset):
+                    # If it's a Dataset, we take the first variable or the one matching value_name
+                    var_name = list(obj.data_vars)[0]
+                    da = obj[var_name]
+                else:
+                    da = obj
+
+                # Extract years safely
+                years = da.time.dt.year.values
+
+                # Convert to DataFrame and reset index to expose 'time'
+                df = da.to_dataframe(name=value_name).reset_index()
+
+                # Overwrite/Add the year column
+                df["year"] = years
+
+                # Final selection and cleaning
+                df = df[["year", value_name]].copy()
+                
+                # Remove any potential NaN rows that might break the R-interface
+                df = df.dropna(subset=[value_name])
+                
+                df_dict[name] = df
+
+            except Exception as e:
+                print(f"Error converting model '{name}': {e}")
+                continue
+
+        return df_dict
+    
+    @staticmethod
+    def get_validation_details(mod_est, mod_low, mod_high, obs, param_name):
+        """
+        Returns (Status, Summary_String)
+        """
+        # Best estimate inside observed CI
+        if obs['lower'] <= mod_est <= obs['upper']:
+            summary = f"{param_name}: Good (Est {mod_est:.2f} in Obs CI [{obs['lower']:.2f}, {obs['upper']:.2f}])"
+            return "Good", summary
+        
+        # Calculate Overlap
+        overlap_min = max(mod_low, obs['lower'])
+        overlap_max = min(mod_high, obs['upper'])
+        
+        if overlap_max > overlap_min:
+            overlap_width = overlap_max - overlap_min
+            ref_width = min((mod_high - mod_low), (obs['upper'] - obs['lower']))
+            overlap_pct = (overlap_width / ref_width) * 100
+            
+            if overlap_pct >= 5:
+                summary = f"{param_name}: Reasonable ({overlap_pct:.1f}% overlap)"
+                return "Reasonable", summary
+            else:
+                summary = f"{param_name}: Bad (Insufficient overlap: {overlap_pct:.1f}%)"
+                return "Bad", summary
+        
+        summary = f"{param_name}: Bad (No overlap between [{mod_low:.2f}, {mod_high:.2f}] and [{obs['lower']:.2f}, {obs['upper']:.2f}])"
+        return "Bad", summary   
+
+    @staticmethod
+    def extract_results(df, df_res, obs_sigma, obs_shape, obs_return_period, obs_event_magnitude):
+        """ 
+        Compare model validation results with observations and update the DataFrame.
+        df: DataFrame to update (model hub)
+        df_res: DataFrame with validation results
+        obs_sigma: dict with observed sigma values
+        obs_shape: dict with observed shape values
+        """
+        # Helper to format results with uncertainty
+        def fmt(row, prefix, suffix):
+            try:
+                # For temperature, we typically use dI-abs
+                val = row[f'{prefix}_{suffix}_est']
+                low = row[f'{prefix}_{suffix}_lower']
+                upp = row[f'{prefix}_{suffix}_upper']
+                return f"{val:.2f} ({low:.2f}, {upp:.2f})"
+            except:
+                return "N/A"
+
+        for model_name in df_res['model'].unique():
+            m_rows = df_res[df_res['model'] == model_name]
+            mask = df['model'].str.lower() == model_name.lower()
+            if not mask.any(): continue
+
+            # A. Validation Status (using 'eval_' columns)
+            v_row = m_rows[m_rows['scenario'] == 'Validation']
+            if not v_row.empty:
+                r = v_row.iloc[0]
+                s_status, s_sum = Utils.get_validation_details(r['eval_sigma0_est'], r['eval_sigma0_lower'], r['eval_sigma0_upper'], obs_sigma, "Σ")
+                x_status, x_sum = Utils.get_validation_details(r['eval_shape_est'], r['eval_shape_lower'], r['eval_shape_upper'], obs_shape, "ξ")
+                
+                df.loc[mask, 'sigma_validation'] = s_status
+                df.loc[mask, 'shape_validation'] = x_status
+                df.loc[mask, 'validation_summary'] = f"{s_sum}; {x_sum}"
+
+                # Model Threshold is the 'rp_value' calculated during validation
+                model_threshold = r['rp_value']
+                
+                df.loc[mask, 'Magnitude (Obs / Validation)'] = f"{obs_event_magnitude:.2f} / {model_threshold:.2f}"
+                df.loc[mask, 'RP (Obs / Validation)'] = f"{obs_return_period:.1f} / {obs_return_period:.1f}"
+                
+                # Auto-Recommendation Logic
+                ranks = {"Good": 3, "Reasonable": 2, "Bad": 1}
+                score = min(ranks[s_status], ranks[x_status])
+                df.loc[mask, 'Stat Fit'] = [k for k, v in ranks.items() if v == score][0]
+
+            # B. Past Analysis (using 'attr_' columns)
+            p_row = m_rows[m_rows['scenario'] == 'Past-Full']
+            if not p_row.empty:
+                r = p_row.iloc[0]
+                df.loc[mask, 'Past_PR'] = fmt(r, 'attr', 'PR')
+                df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-abs')
+            
+            if p_row.empty:
+                p_row = m_rows[m_rows['scenario'] == 'Validation']
+                if not p_row.empty:
+                    r = p_row.iloc[0]
+                    df.loc[mask, 'Past_PR'] = fmt(r, 'attr', 'PR')
+                    df.loc[mask, 'Past_dI'] = fmt(r, 'attr', 'dI-abs')
+
+            # C. Future Projections (using 'proj_' columns)
+            f20_row = m_rows[m_rows['scenario'] == 'Future-2.0']
+            if not f20_row.empty:
+                r = f20_row.iloc[0]
+                df.loc[mask, 'Fut_2.0_PR'] = fmt(r, 'proj', 'PR')
+                df.loc[mask, 'Fut_2.0_dI'] = fmt(r, 'proj', 'dI-abs')
+
+            f26_row = m_rows[m_rows['scenario'] == 'Future-2.6']
+            if not f26_row.empty:
+                r = f26_row.iloc[0]
+                df.loc[mask, 'Fut_2.6_PR'] = fmt(r, 'proj', 'PR')
+                df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-abs') 
+
+    @staticmethod
+    def create_decision_hub(df_validation, step='full', ensemble_filter='all', save_path=None):
+        """
+        Creates an interactive table for Model Validation.
+        save_path: path to the CSV file to persist choices to disk.
+        """
+
+        df_filtered = df_validation.copy()
+        if ensemble_filter.lower() != 'all':
+            df_filtered = df_filtered[df_filtered['ensemble'].str.lower() == ensemble_filter.lower()]
+        
+        rows = []
+        decision_widgets = {}
+
+        # Column Widths
+        w_model, w_ens, w_val, w_res, w_drop, w_obs = '180px', '80px', '100px', '130px', '100px', '250px'
+
+        # Build Header
+        header_list = [widgets.Label('Model', layout={'width': w_model}), widgets.Label('Ens', layout={'width': w_ens})]
+
+        if step == 'full':
+            header_list += [
+                widgets.Label('Seasonal', layout={'width': w_val}), widgets.Label('Spatial', layout={'width': w_val}),
+                widgets.Label('Stat Fit', layout={'width': w_val}), widgets.Label('Past PR/dI', layout={'width': w_res}),
+                widgets.Label('Fut 2.0 PR/dI', layout={'width': w_res}), widgets.Label('Fut 2.6 PR/dI', layout={'width': w_res}),
+                widgets.Label('Include?', layout={'width': w_drop}), widgets.Label('Comments', layout={'width': w_obs})
+            ]
+        elif step == 'statistics':
+            header_list += [
+                widgets.Label('Σ', layout={'width': '80px'}), widgets.Label('ξ', layout={'width': '80px'}),
+                widgets.Label('Summary', layout={'width': '300px'}), widgets.Label('Mag (Obs/Val)', layout={'width': '100px'}),
+                widgets.Label('Include?', layout={'width': w_drop}), widgets.Label('Comments', layout={'width': w_obs})
+            ]
+        else:
+            header_list.extend([
+                widgets.Label(f"{step.capitalize()} Score", layout={'width': '120px'}),
+                widgets.Label('Include?', layout={'width': w_drop}), 
+                widgets.Label('Comments', layout={'width': w_obs})
+            ])
+        header = widgets.HBox(header_list, layout={'background_color': '#f0f0f0', 'margin': '5px 0px'})
+        
+        for idx, row in df_filtered.iterrows():
+            line_items = [widgets.Label(row['model'], layout={'width': w_model}), widgets.Label(row['ensemble'], layout={'width': w_ens})]
+            decision_widgets[row['model']] = {}
+
+            # Check if we already have a value, otherwise use default
+            current_inc = row.get('Include T/F')
+            current_obs = row.get('Comments', '')
+            
+            # Logic for default "Include" if nothing is saved yet
+            if step == 'statistics':
+                default_inc = True if row['sigma_validation'] != 'Bad' and row['shape_validation'] != 'Bad' else False
+            else:
+                default_inc = True if row['Stat Fit'] != 'Bad' else False
+
+            # Define widgets with existing values if they exist
+            inc_drop = widgets.Dropdown(
+                options=[True, False], 
+                value=current_inc if pd.notna(current_inc) and current_inc in [True, False] else default_inc, 
+                layout={'width': w_drop}
+            )
+            obs_text = widgets.Text(value=str(current_obs) if pd.notna(current_obs) else "", layout={'width': w_obs})
+
+            if step == 'statistics':
+                for p in ['sigma_validation', 'shape_validation']:
+                    val = str(row.get(p, 'Pending'))
+                    color = 'green' if val == 'Good' else 'orange' if val == 'Reasonable' else 'red'
+                    line_items.append(widgets.HTML(f"<b style='color:{color}'>{val}</b>", layout={'width': '80px'}))
+                
+                line_items.append(widgets.HTML(f"<small>{row.get('validation_summary', '')}</small>", layout={'width': '300px'}))
+                line_items.append(widgets.HTML(f"<small>{row.get('Magnitude (Obs / Validation)', 'N/A')}</small>", layout={'width': '100px'}))
+                line_items.extend([inc_drop, obs_text])
+
+            elif step == 'full':
+                for col in ['Seasonal cycle', 'Spatial maps', 'Stat Fit']:
+                    val = str(row.get(col, 'Pending'))
+                    color = 'green' if val == 'Good' else 'orange' if val == 'Reasonable' else 'red'
+                    line_items.append(widgets.HTML(f"<b style='color:{color}'>{val}</b>", layout={'width': w_val}))
+
+                for prefix in ['Past', 'Fut_2.0', 'Fut_2.6']:
+                    line_items.append(widgets.HTML(f"<small>PR: {row.get(f'{prefix}_PR', 'N/A')}<br>dI: {row.get(f'{prefix}_dI', 'N/A')}</small>", layout={'width': w_res}))
+                
+                line_items.extend([inc_drop, obs_text])
+
+            elif step in ['seasonal', 'spatial']:
+                col_name = 'Seasonal cycle' if step == 'seasonal' else 'Spatial maps'
+                current_val = row.get(col_name)
+                s_val = current_val if current_val in ['Good', 'Reasonable', 'Bad'] else 'Reasonable'
+                drop = widgets.Dropdown(options=['Good', 'Reasonable', 'Bad'], value=s_val, layout={'width': '120px'})
+                line_items.append(drop)
+                decision_widgets[row['model']][step] = drop
+
+                line_items.extend([inc_drop, obs_text])
+
+            decision_widgets[row['model']]['include'] = inc_drop
+            decision_widgets[row['model']]['obs'] = obs_text
+            rows.append(widgets.HBox(line_items))
+        
+        save_button = widgets.Button(description=f"💾 Save {step.capitalize()}", button_style='success')
+        output = widgets.Output()
+        
+        def on_save_clicked(b):
+            with output:
+                clear_output()
+                for model, w in decision_widgets.items():
+                    mask = df_validation['model'] == model
+                    if 'seasonal' in w: df_validation.loc[mask, 'Seasonal cycle'] = w['seasonal'].value
+                    if 'spatial' in w: df_validation.loc[mask, 'Spatial maps'] = w['spatial'].value
+                    if 'include' in w: df_validation.loc[mask, 'Include T/F'] = w['include'].value
+                    if 'obs' in w: df_validation.loc[mask, 'Comments'] = w['obs'].value
+                
+                # PERSISTENCE TO DISK
+                if save_path:
+                    df_validation.to_csv(save_path, index=False)
+                    print(f"✅ Changes saved to memory AND disk: {save_path}")
+                else:
+                    print(f"✅ Changes saved to memory")
+
+        save_button.on_click(on_save_clicked)
+        display(widgets.VBox([widgets.HTML(f"<h3>Step 4: {step.capitalize()} Validation Hub</h3>"), header, widgets.VBox(rows), save_button, output]))
+
+    
+    @staticmethod
+    def get_cordex_domain_configs():
+        """Returns the raw configuration dictionary for CORDEX domains."""
+        return {"SAM" : {"vertices" : {"TLC":(273.26, 18.50), "TRC":(327.52, 17.23), "BRC" :(343.02, -54.6), "BLC" :(254.28, -52.66)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = -56.06, pole_latitude = 70.6, central_rotated_longitude=180),
+                        "colour" : "red", 
+                        "long_name" : "South America"},
+            "CAM" : {"vertices" : {"TLC":(235.74, 28.79), "TRC":(337.78, 31.40), "BRC" :(329.46, -17.23), "BLC" :(246.10, -19.46)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 113.98, pole_latitude = 75.74),
+                        "colour" : "darkorange", 
+                        "long_name" : "Central America"},
+            "NAM" : {"vertices" : {"TLC" :(189.26, 59.28), "TRC" :(336.74, 59.28), "BRC": (293.16, 12.55), "BLC" :(232.84, 12.56)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 83.0, pole_latitude = 42.5),
+                        "colour" : "forestgreen", 
+                        "long_name" : "North America"},
+            "EUR" : {"vertices" : {"TLC" :(315.86-360, 60.21), "TRC" :(64.4, 66.65), "BRC" :(36.30, 25.36), "BLC" :(350.01-360, 22.20)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = -162.0, pole_latitude = 39.25),
+                        "colour" : "royalblue", 
+                        "long_name" : "Europe"},
+            "AFR" : {"vertices" : {"TLC" :(335.36, 42.24), "TRC" :(60.28, 42.24), "BRC" :(60.28, -45.76), "BLC" :(335.36, -45.76)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 180.0, pole_latitude = 90.0),
+                        "colour" : "teal", 
+                        "long_name" : "Africa"},
+            "WAS" : {"vertices" : {"TLC" :(19.88, 43.5), "TRC" :(115.55, 41.0), "BRC" :(106.43, -15.23), "BLC" :(26.19, -12.97)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 236.66, pole_latitude = 79.95),
+                        "colour" : "chocolate",
+                        "long_name" : "South Asia"},
+            "EAS" : {"vertices" : {"TLC" :(51.59, 50.50), "TRC" :(181.50, 50.31), "BRC" :(156.08, -0.24), "BLC" :(76.91, -0.10)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 296.3, pole_latitude = 61.0),
+                        "colour" : "crimson",
+                        "long_name" : "East Asia"},
+            "CAS" : {"vertices" : {"TLC" :(11.05, 54.76), "TRC" :(139.13, 56.48), "BRC" :(108.44, 19.39), "BLC" :(42.41, 18.34)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 256.61, pole_latitude = 43.48),
+                        "colour" : "darkgoldenrod",
+                        "long_name" : "Central Asia"},
+            "AUS" : {"vertices" : {"TLC" :(110.19, 8.76), "TRC" :(182.02, 12.21), "BRC" :(206.57, -39.25), "BLC" :(89.25, -44.28)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 321.38, pole_latitude = -60.31, central_rotated_longitude=180),
+                        "colour" : "deeppink",
+                        "long_name" : "Australasia"},
+            "ANT" : {"vertices" : {"TLC" :(140.58, -56.0), "TRC" :(245.58, -56.0), "BRC" :(326.14, -56.26), "BLC" :(60.02, -56.26)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 13.09, pole_latitude = -6.08, central_rotated_longitude=180),
+                        "colour" : "slategray",
+                        "long_name" : "Antarctica"},
+            "ARC" : {"vertices" : {"TLC" :(214.68, 55.43), "TRC" :(140.59, 52.53), "BRC" :(40.35, 46.06), "BLC" :(324.82, 52.0)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 0.0, pole_latitude = 6.55),
+                        "colour" : "Crimson",
+                        "long_name" : "Arctic"},
+            "MED" : {"vertices" : {"TLC" :(339.79, 50.65), "TRC" :(50.85, 52.34), "BRC" :(38.33, 26.73), "BLC" :(353.96, 25.63)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 198.0, pole_latitude = 39.25),
+                        "colour" : "MediumOrchid",
+                        "long_name" : "Mediterranean"},
+            "MNA" : {"vertices" : {"TLC" :(333.0, 45.0), "TRC" :(76.0, 45), "BRC" :(76.0, -7), "BLC" :(333.0, -7)},
+                        "projection" : ccrs.RotatedPole(pole_longitude = 180.0, pole_latitude = 90.0),
+                        "colour" : "MediumSeaGreen",
+                        "long_name" : "Middle East / North Africa"},
+    }
+
+    @staticmethod
+    def get_gcm_cordex_to_cmip5():
+        """
+        Returns a nested mapping: CORDEX_GCM_Name -> Driving_Model & Ensembles.
+        Each ensemble contains the specific periods for Historical and RCP8.5.
+        """
+        return {
+            'cccma_canesm2': {
+                'driving_model': "canesm2",
+                'ensembles': {
+                    'r1i1p1': {
+                        'historical': ["185001-200512"],
+                        'rcp_8_5': ["200601-210012"]
+                    }
+                }
+            },
+            'cnrm_cerfacs_cm5': {
+                'driving_model': "cnrm_cm5",
+                'ensembles': {
+                    'r1i1p1': {
+                        'historical': ["185001-189912", "190001-194912", "195001-200512"],
+                        'rcp_8_5': ["200601-205512", "205601-210012"]
+                    }
+                }
+            },
+            'ichec_ec_earth': {
+                'driving_model': "ec_earth",
+                'ensembles': {
+                    'r12i1p1': {
+                        'historical': ["185001-189912", "190001-194912", "195001-201212"],
+                        'rcp_8_5': ["200601-210012"]
+                    }
+                }
+            },
+            'ipsl_cm5a_mr': {
+                'driving_model': "ipsl_cm5a_mr",
+                'ensembles': {
+                    'r1i1p1': {
+                        'historical': ["185001-200512"],
+                        'rcp_8_5': ["200601-210012"]
+                    }
+                }
+            },
+            'mohc_hadgem2_es': {
+                'driving_model': "hadgem2_es",
+                'ensembles': {
+                    'r1i1p1': {
+                        'historical': ["185912-188411", "188412-190911", "190912-193411", "193412-195911", "195912-198411", "198412-200511"],
+                        'rcp_8_5': ["200512-203011", "203012-205511", "205512-208011", "208012-210011"]
+                    }
+                }
+            },
+            'mpi_m_mpi_esm_lr': {
+                'driving_model': "mpi_esm_lr",
+                'ensembles': {
+                    'r1i1p1': {
+                        'historical': ["185001-200512"],
+                        'rcp_8_5': ["200601-210012"]
+                    },
+                    'r3i1p1': {
+                        'historical': ["185001-200512"],
+                        'rcp_8_5': ["200601-210012"]
+                    }
+                }
+            },
+            'ncc_noresm1_m': {
+                'driving_model': "noresm1_m",
+                'ensembles': {
+                    'r1i1p1': {
+                        'historical': ["185001-200512"],
+                        'rcp_8_5': ["200601-210012"]
+                    }
+                }
+            }
+        }

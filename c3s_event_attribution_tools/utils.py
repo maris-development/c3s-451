@@ -865,46 +865,45 @@ class Utils:
         )
     
     @staticmethod
-    def convert_series_to_dfs(
+    def convert_annual_series_to_dfs(
         series_dict: Dict[str, Union[xr.DataArray, xr.Dataset]], 
         value_name: str = "value"
     ) -> Dict[str, pd.DataFrame]:
         """
-        Converts a dictionary of xarray objects into a dictionary of cleaned pandas DataFrames.
-
-        Args:
-            series_dict: Dictionary where keys are model names and values are xarray DataArrays/Datasets.
-            value_name: The name to assign to the data column. Defaults to "value".
-
-        Returns:
-            A dictionary of pandas DataFrames indexed by model names.
+        Converts yearly or daily xarray objects into cleaned pandas DataFrames.
         """
         df_dict = {}
 
         for name, obj in series_dict.items():
             try:
-                # Ensure we are working with a DataArray
+                # Ensure we have a DataArray
                 if isinstance(obj, xr.Dataset):
-                    # If it's a Dataset, we take the first variable or the one matching value_name
                     var_name = list(obj.data_vars)[0]
                     da = obj[var_name]
                 else:
                     da = obj
 
-                # Extract years safely
-                years = da.time.dt.year.values
-
-                # Convert to DataFrame and reset index to expose 'time'
+                # Convert to DataFrame
                 df = da.to_dataframe(name=value_name).reset_index()
 
-                # Overwrite/Add the year column
-                df["year"] = years
+                # Handle the "Year" column
+                if "year" in df.columns:
+                    pass
+                elif "time" in df.columns:
+                    # It's a daily series, extract year from the datetime objects
+                    df["year"] = pd.to_datetime(df["time"]).dt.year
+                else:
+                    raise KeyError(f"Could not find 'year' or 'time' in coordinates for {name}")
 
                 # Final selection and cleaning
+
                 df = df[["year", value_name]].copy()
                 
-                # Remove any potential NaN rows that might break the R-interface
+                # Remove NaNs
                 df = df.dropna(subset=[value_name])
+                
+                # Optional: Sort by year to ensure clean plots/stats
+                df = df.sort_values("year")
                 
                 df_dict[name] = df
 
@@ -1034,6 +1033,7 @@ class Utils:
         """
         Creates an interactive, scrollable table for Model Validation.
         """
+        df_validation['Include T/F'] = df_validation['Include T/F'].astype(object)
         df_filtered = df_validation.copy()
         if project_filter.lower() != 'all':
             df_filtered = df_filtered[df_filtered['project'].str.lower() == project_filter.lower()]
@@ -1213,7 +1213,61 @@ class Utils:
             save_button, 
             output
         ])
-        display(ui)
+        return ui
+
+    @staticmethod
+    def get_parameter_config(parameter):
+        PARAMETER_CONFIG = {
+                "Tmax": {
+                    "variable": "Maximum Temperature",
+                    "value_col": "t2m",
+                    "y_label": "c",
+                    "unit": "°C",
+                    "calculation": "absolute",
+                    "method": "mean",
+                    "datetime_col": "valid_time",
+                    "from_unit": "k",
+                    "to_unit": "c",
+                },
+                "Tmean": {
+                    "variable": "Mean Temperature",
+                    "value_col": "t2m",
+                    "y_label": "c",
+                    "unit": "°C",
+                    "calculation": "absolute",
+                    "method": "mean",
+                    "datetime_col": "valid_time",
+                    "from_unit": "k",
+                    "to_unit": "c",
+                },
+                "Tmin": {
+                    "variable": "Minimum Temperature",
+                    "value_col": "t2m",
+                    "y_label": "c",
+                    "unit": "°C",
+                    "calculation": "absolute",
+                    "method": "mean",
+                    "datetime_col": "valid_time",
+                    "from_unit": "k",
+                    "to_unit": "c",
+                },
+                "Precipitation": {
+                    "variable": "Total Precipitation",
+                    "value_col": "tp",
+                    "y_label": "mm",
+                    "unit": "mm",
+                    "calculation": "relative",
+                    "method": "sum",
+                    "datetime_col": "valid_time",
+                    "from_unit": "m",
+                    "to_unit": "mm",
+                },
+            }
+        try:
+            return PARAMETER_CONFIG.get(parameter)
+        except Exception as e:
+            print(f"Error retrieving parameter config for {parameter}: {e}")
+            return None
 
     @staticmethod
     def var_map(parameter, model):

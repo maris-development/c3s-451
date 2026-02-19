@@ -512,7 +512,7 @@ class Process:
     # J: or if the output is even similar to the original
     # J: this does not work for xarray, only geopandas
     @staticmethod
-    def calculate_mean(df: gpd.GeoDataFrame|xr.DataArray|xr.Dataset, value_col: str, groupby_col: str|list[str]) -> gpd.GeoDataFrame:
+    def calculate_mean(gdf: gpd.GeoDataFrame|xr.DataArray|xr.Dataset, value_col: str, groupby_col: str|list[str]) -> gpd.GeoDataFrame:
 
         '''
         Calculate mean values grouped by specified columns.
@@ -535,23 +535,23 @@ class Process:
         '''
 
         # this line doesnt work because groupby cant be used on a weighted dataframe
-        if isinstance(df, (xr.DataArray, xr.Dataset)):
-            return (df.groupby(groupby_col).mean(dim=('latitude', 'logitude')))
+        if isinstance(gdf, (xr.DataArray, xr.Dataset)):
+            return (gdf.groupby(groupby_col).mean(dim=('latitude', 'longitude')))
 
-        if isinstance(df, (gpd.GeoDataFrame)):
-            if '_weights' in df.columns:
+        if isinstance(gdf, (gpd.GeoDataFrame, pd.DataFrame)):
+            if '_weights' in gdf.columns:
                 # Weighted mean
-                gdf_result = df.groupby(groupby_col).apply(
+                gdf_result = gdf.groupby(groupby_col).apply(
                     lambda x: (x[value_col] * x["_weights"]).sum() / x["_weights"].sum()
                 ).reset_index(name=value_col)
                 # .rename(value_col).reset_index()
 
             else:
                 # Unweighted mean
-                gdf_result = df.groupby(groupby_col)[value_col].mean().reset_index()
+                gdf_result = gdf.groupby(groupby_col)[value_col].mean().reset_index()
 
             is_spatial = 'longitude' in groupby_col and 'latitude' in groupby_col and 'geometry' in groupby_col
-            crs = df.crs if is_spatial else None
+            crs = gdf.crs if is_spatial else None
 
             if is_spatial:
                 # Recreate geometry if needed
@@ -670,7 +670,7 @@ class Process:
 
         match yearly_value:
             case 'mean':
-                return Process.calculate_mean(df=rolled_gdf, value_col=value_col, groupby_col='year'), rolled_gdf
+                return Process.calculate_mean(gdf=rolled_gdf, value_col=value_col, groupby_col='year'), rolled_gdf
             case 'max':
                 return Process.calculate_max(gdf=rolled_gdf, value_col=value_col, datetime_col=new_datetime_col, groupby_col='year'), rolled_gdf
             case 'min':
@@ -857,42 +857,64 @@ class Process:
 
         for name, da in time_series.items():
             # Determine method automatically for this specific DataArray if not provided
-            current_method = method
-            if current_method is None:
-                # Check variable name safely
-                var_name = da.name.lower() if da.name else ""
-                if any(k in var_name for k in ["tp", "precip", "pr"]):
-                    current_method = "sum"
-                else:
-                    current_method = "mean"
-
+            if method is None:
+                raise ValueError("Method must be specified as 'mean' or 'sum'")
+            
+            da = da.sel(time=~((da.time.dt.month == 2) & (da.time.dt.day == 29)))
             # Rolling window on the daily series
             if padding is not None and padding > 1:
-                if current_method == "mean":
-                    da_rolled = da.rolling(time=padding, center=True).mean()
-                elif current_method == "sum":
-                    da_rolled = da.rolling(time=padding, center=True).sum()
+                roller = da.rolling(time=padding, center=True, min_periods=1)
+                if method == "mean":
+                    da_rolled = roller.mean()
+                elif method == "sum":
+                    da_rolled = roller.sum()
                 else:
-                    raise ValueError(f"Method must be 'mean' or 'sum', got '{current_method}'")
+                    raise ValueError(f"Method must be 'mean' or 'sum', got '{method}'")
             else:
                 da_rolled = da
 
             # subset the gdf to remove potential padding
             if month_range is not None:
-                start_month, end_month = month_range
-                da_rolled = da_rolled.sel(time=da_rolled.time.dt.month.isin(range(start_month, end_month + 1)))
+                start_m, end_m = month_range
+                if start_m <= end_m:
+                    mask = (da_rolled.time.dt.month >= start_m) & (da_rolled.time.dt.month <= end_m)
+                else:
+                    mask = (da_rolled.time.dt.month >= start_m) | (da_rolled.time.dt.month <= end_m)
+                
+                da_filtered = da_rolled.where(mask, drop=True)
+
+                filtered_months = da_filtered.time.dt.month
+                filtered_years = da_filtered.time.dt.year
+
+                if start_m <= end_m:
+                    group_key = 'time.year'
+                else:
+                    seasonal_year = xr.where(
+                        filtered_months >= start_m, 
+                        filtered_years + 1, 
+                        filtered_years
+                    )
+                    da_filtered.coords["season_year"] = seasonal_year
+                    group_key = "season_year"
+            else:
+                da_filtered = da_rolled
+                group_key = 'time.year'
 
             # Compute yearly statistic on the rolled series
             if yearly_value == "max":
-                da_year = da_rolled.resample(time="YE").max()
+                da_year = da_filtered.groupby(group_key).max(dim="time")
             elif yearly_value == "mean":
-                da_year = da_rolled.resample(time="YE").mean()
+                da_year = da_filtered.groupby(group_key).mean(dim="time")
             elif yearly_value == "min":
-                da_year = da_rolled.resample(time="YE").min()
+                da_year = da_filtered.groupby(group_key).min(dim="time")
             else:
                 raise ValueError(f"yearly_value must be: max, mean, min. Got '{yearly_value}'")
+            
+            if group_key != 'time.year':
+                da_year = da_year.rename({group_key: 'year'})
+            else:
+                da_year = da_year.rename({'year': 'year'})
 
-            # 4. Store result
             da_yearly_series[name] = da_year
 
         return da_yearly_series
@@ -1077,7 +1099,7 @@ class Process:
 
     @staticmethod
     def compute_climate_indices(data_input, parameter, study_region, 
-                            baseline_range=("1990", "2020"), padding=15, month_range: tuple[int, int]=None):
+                            baseline_range=("1991", "2020"), padding=15, sc_month_range: tuple[int, int]=None, clim_month_range: tuple[int, int]=None):
         """
         Unified processor for CMIP6 and CORDEX data.
         data_input: Can be a dict {name: ds} (CMIP6) or a list of dicts (CORDEX).
@@ -1126,16 +1148,13 @@ class Process:
 
                 gr_daily_clim = da.sel(time=slice(*baseline_range))
 
-                # Product A: Spatial Climatology
-                da_clim = gr_daily_clim.mean("time")
-
                 # Spatial Masking
                 mask = regionmask.mask_geopandas(study_region, da.longitude, da.latitude)
                 ts_regional = da.where(mask == 0, drop=True)
 
                 # Product B: Regional Time Series (Latitude Weighted)
-                ts_weighted = Process.weighted_values(ts_regional, value_col=None, lat_col='latitude')
-                ts_final = ts_weighted.mean([xdim, ydim]).sortby("time")
+                weights = Process.weighted_values(ts_regional, value_col=None, lat_col='latitude')
+                ts_final = ts_regional.weighted(weights).mean([xdim, ydim]).sortby("time")
 
                 # Product C: Seasonal Cycle
 
@@ -1160,12 +1179,12 @@ class Process:
 
                 sc = clim31d.where(mask == 0, drop=True)
 
-                if month_range is None:
+                if sc_month_range is None:
                     start_month, end_month = 1, 12   # full year
                 else:
-                    start_month, end_month = month_range
+                    start_month, end_month = sc_month_range
                 # Create a dummy non-leap year to map month → doy
-                dummy_time = xr.cftime_range(start="2001-01-01", periods=365, freq="D")
+                dummy_time = xr.cftime_range(start="2025-01-01", periods=365, freq="D")
                 sc = sc.assign_coords(dayofyear_time=("dayofyear", dummy_time))
 
                 if end_month >= start_month:
@@ -1181,12 +1200,19 @@ class Process:
                 sc = sc.drop_vars("dayofyear_time")
 
                 # Re-sort the time axis for cross-year scenarios
-                if month_range is not None and end_month < start_month:
+                if sc_month_range is not None and end_month < start_month:
                     doy = sc.dayofyear
                     sort_key = xr.where(doy < 32 * start_month, doy + 365, doy)
                     sc = sc.sortby(sort_key)
-                sc = Process.weighted_values(sc, value_col=None, lat_col='latitude')
-                sc = sc.mean([xdim, ydim])
+                weights_sc = Process.weighted_values(sc, value_col=None, lat_col='latitude')
+                sc = sc.weighted(weights_sc).mean([xdim, ydim])
+
+                # Product A: Spatial Climatology
+                start_month, end_month = clim_month_range if clim_month_range else (1, 12)
+                da_clim = clim31d.assign_coords(dayofyear_time=("dayofyear", dummy_time))
+                month_list = list(range(start_month, end_month + 1))
+                da_clim = da_clim.sel(dayofyear_time=da_clim.dayofyear_time.dt.month.isin(month_list))
+                da_clim = da_clim.mean(dim="dayofyear")
 
                 # Store Results
 
@@ -1245,8 +1271,8 @@ class Process:
                 if "lon" in da.coords: da = da.rename({"lon": "longitude"})
 
                 # Spatial Average (Latitude Weighted)
-                gmst_monthly = Process.weighted_values(da, value_col=None, lat_col='latitude')
-                gmst_monthly = gmst_monthly.mean(["longitude", "latitude"]).sortby("time")
+                weights = Process.weighted_values(da, value_col=None, lat_col='latitude')
+                gmst_monthly = da.weighted(weights).mean(["longitude", "latitude"]).sortby("time")
 
                 # Temporal Aggregation (Annual)
                 gmst_yearly = gmst_monthly.groupby("time.year").mean().compute()
@@ -1282,6 +1308,63 @@ class Process:
                 print(f"ERROR: Failed to process GMST for {model_name}: {e}")
                 
         return results
+    
+    @staticmethod
+    def sliding_stat_by_dayofyear(data, pad=15, method='std', quantile_val=0.9):
+
+        """
+        Compute day-of-year-based sliding window statistics (mean, std, or quantile) across years.
+
+        Parameters:
+        -----------
+        data : xr.DataArray
+            3D DataArray with dimensions ('time', 'lat', 'lon')
+        pad : int
+            Number of days on either side to include in the window (default: 15 → 30-day window)
+        method : str
+            Statistic to compute: 'std', 'mean', or 'quantile'
+        quantile_val : float
+            Quantile to compute if method='quantile' (e.g., 0.9 for 90th percentile)
+
+        Returns:
+        --------
+        xr.DataArray
+            DataArray of shape (dayofyear, lat, lon) with the selected statistic
+            Each [d, :, :] slice contains the 30-day std around day d, computed across all years.
+        """
+
+        # Sanity check
+        if method not in ['std', 'mean', 'quantile']:
+            raise ValueError("method must be one of: 'std', 'mean', 'quantile'")
+
+        # Remove Feb 29 to standardize 365-day calendar
+        data = data.sel(valid_time=~((data.valid_time.dt.month == 2) & (data.valid_time.dt.day == 29)))
+
+        days = np.arange(1, 366)  # Days of year
+        dayofyear = data.valid_time.dt.dayofyear
+        result_list = []
+
+        for day in days:
+            # Build ±pad-day window (cyclically)
+            window_days = [(day + offset - 1) % 365 + 1 for offset in range(-pad, pad + 1)]
+            mask = dayofyear.isin(window_days)
+            window_data = data.sel(valid_time=mask)
+
+            # Compute selected statistic
+            if method == 'std':
+                stat = window_data.std(dim='valid_time')
+            elif method == 'mean':
+                stat = window_data.mean(dim='valid_time')
+            elif method == 'quantile':
+                stat = window_data.quantile(quantile_val, dim='valid_time')
+            
+            result_list.append(stat)
+
+        # Combine results
+        result = xr.concat(result_list, dim='dayofyear')
+        result = result.assign_coords(dayofyear=days)
+
+        return result
     
     @staticmethod
     def analyze_extreme_scenario():

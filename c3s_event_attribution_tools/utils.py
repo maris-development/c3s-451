@@ -943,13 +943,14 @@ class Utils:
         return "Bad", summary   
 
     @staticmethod
-    def extract_results(parameter, df, df_res, obs_sigma, obs_shape, obs_return_period, obs_event_magnitude):
+    def extract_results(parameter, df, df_res, df_obs, dist, conf):
         """ 
         Compare model validation results with observations and update the DataFrame.
         df: DataFrame to update (model hub)
         df_res: DataFrame with validation results
-        obs_sigma: dict with observed sigma values
-        obs_shape: dict with observed shape values
+        df_obs: DataFrame with observational estimates and confidence intervals
+        dist: Distribution type (e.g., 'gev', 'norm')
+        conf: Dispersion type type (e.g., 'shift', 'fixeddisp')
         """
         # Helper to format results with uncertainty
         def fmt(row, prefix, suffix):
@@ -961,6 +962,39 @@ class Utils:
                 return f"{val:.2f} ({low:.2f}, {upp:.2f})"
             except:
                 return "N/A"
+        
+        def get_obs_dict(df, param_prefix):
+            try:
+                return {
+                    'est':   df.loc['era5', f'{param_prefix}_est'],
+                    'lower': df.loc['era5', f'{param_prefix}_lower'],
+                    'upper': df.loc['era5', f'{param_prefix}_upper']
+                }
+            except KeyError:
+                print(f"⚠️  Note: Parameter '{param_prefix}' not found in observations. Skipping.")
+                return None
+            
+        active_params = []
+        if dist == "gev":
+            active_params.append("shape")
+            obs_shape = get_obs_dict(df_obs, 'shape')
+            if conf == "shift":
+                active_params.append("sigma")
+                obs_sigma = get_obs_dict(df_obs, 'sigma0')
+            else:
+                active_params.append("disp")
+                obs_disp = get_obs_dict(df_obs, 'disp')
+        elif dist == "norm":
+            if conf == "shift":
+                active_params.append("sigma")
+                obs_sigma = get_obs_dict(df_obs, 'sigma0')
+            else:
+                active_params.append("disp")
+                obs_disp = get_obs_dict(df_obs, 'disp')
+                
+        obs_return_period = df_obs.loc['era5', 'return_period_est']
+
+        obs_event_magnitude = df_obs.loc['era5', 'event_magnitude_est']
 
         for model_name in df_res['model'].unique():
             m_rows = df_res[df_res['model'] == model_name]
@@ -971,23 +1005,43 @@ class Utils:
             v_row = m_rows[m_rows['scenario'] == 'Validation']
             if not v_row.empty:
                 r = v_row.iloc[0]
-                s_status, s_sum = Utils.get_validation_details(r['eval_sigma0_est'], r['eval_sigma0_lower'], r['eval_sigma0_upper'], obs_sigma, "Σ")
-                x_status, x_sum = Utils.get_validation_details(r['eval_shape_est'], r['eval_shape_lower'], r['eval_shape_upper'], obs_shape, "ξ")
-                
-                df.loc[mask, 'sigma_validation'] = s_status
-                df.loc[mask, 'shape_validation'] = x_status
-                df.loc[mask, 'validation_summary'] = f"{s_sum}; {x_sum}"
+
+                results = {} # Store results for active parameters only
+            
+                # Conditionally validate Sigma
+                if "sigma" in active_params:
+                    status, summ = Utils.get_validation_details(r['eval_sigma0_est'], r['eval_sigma0_lower'], r['eval_sigma0_upper'], obs_sigma, "Sigma")
+                    results['sigma'] = (status, summ)
+                    df.loc[mask, 'sigma_validation'] = status
+
+                # Conditionally validate Shape
+                if "shape" in active_params:
+                    status, summ = Utils.get_validation_details(r['eval_shape_est'], r['eval_shape_lower'], r['eval_shape_upper'], obs_shape, "Shape")
+                    results['shape'] = (status, summ)
+                    df.loc[mask, 'shape_validation'] = status
+                    
+                # Conditionally validate Dispersion
+                if "disp" in active_params:
+                    status, summ = Utils.get_validation_details(r['eval_disp_est'], r['eval_disp_lower'], r['eval_disp_upper'], obs_disp, "Disp")
+                    results['disp'] = (status, summ)
+                    df.loc[mask, 'disp_validation'] = status
+
+                # Update Summary String dynamically
+                summary_text = "; ".join([v[1] for v in results.values()])
+                df.loc[mask, 'validation_summary'] = summary_text
+
+                ranks = {"Good": 3, "Reasonable": 2, "Bad": 1}
+                # Get the minimum score among active parameters
+                scores = [ranks[v[0]] for v in results.values()]
+                min_score = min(scores) if scores else 1
+
+                df.loc[mask, 'Stat Fit'] = [k for k, v in ranks.items() if v == min_score][0]
 
                 # Model Threshold is the 'rp_value' calculated during validation
                 model_threshold = r['rp_value']
-                
                 df.loc[mask, 'Magnitude (Obs / Validation)'] = f"{obs_event_magnitude:.2f} / {model_threshold:.2f}"
                 df.loc[mask, 'RP (Obs / Validation)'] = f"{obs_return_period:.1f} / {obs_return_period:.1f}"
                 
-                # Auto-Recommendation Logic
-                ranks = {"Good": 3, "Reasonable": 2, "Bad": 1}
-                score = min(ranks[s_status], ranks[x_status])
-                df.loc[mask, 'Stat Fit'] = [k for k, v in ranks.items() if v == score][0]
 
             # B. Past Analysis (using 'attr_' columns)
             p_row = m_rows[m_rows['scenario'] == 'Past-Full']
@@ -1027,12 +1081,18 @@ class Utils:
                     df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-rel')
                 else:
                     df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-abs') 
+        
+        return active_params
 
     @staticmethod
-    def create_decision_hub(df_validation, step='full', project_filter='all', save_path=None):
+    def create_decision_hub(df_validation, step='full', project_filter='all', save_path=None, active_params=None):
         """
         Creates an interactive, scrollable table for Model Validation.
         """
+
+        if active_params is None:
+            active_params = ['sigma', 'shape', 'disp']
+
         df_validation['Include T/F'] = df_validation['Include T/F'].astype(object)
         df_filtered = df_validation.copy()
         if project_filter.lower() != 'all':
@@ -1076,8 +1136,11 @@ class Utils:
             ]
         elif step == 'statistics':
             header_list += [
-                widgets.HTML(f'<b>Σ</b>', layout={'width': '80px'}), 
-                widgets.HTML(f'<b>ξ</b>', layout={'width': '80px'}),
+                # Map internal names to Display names
+                widgets.HTML(f"<b>{p.capitalize()}</b>", layout={'width': '80px'}) 
+                for p in active_params if p in ['sigma', 'shape', 'disp']
+            ]
+            header_list += [
                 widgets.HTML(f'<b>Summary</b>', layout={'width': '300px'}), 
                 widgets.HTML(f'<b>Mag (Obs/Val)</b>', layout={'width': w_res}),
                 widgets.HTML(f'<b>Include?</b>', layout={'width': w_drop}), 
@@ -1119,8 +1182,10 @@ class Utils:
             obs_text = widgets.Text(value=str(current_obs) if pd.notna(current_obs) else "", layout={'width': w_obs})
 
             if step == 'statistics':
-                for p in ['sigma_validation', 'shape_validation']:
+                for p in active_params:
                     val = str(row.get(p, 'Pending'))
+                    col_name = f'{p}_validation' 
+                    val = str(row.get(col_name, 'Pending'))
                     color = 'green' if val == 'Good' else 'orange' if val == 'Reasonable' else 'red'
                     line_items.append(widgets.HTML(f"<div><b style='color:{color}'>{val}</b></div>", layout={'width': '80px'}))
                 

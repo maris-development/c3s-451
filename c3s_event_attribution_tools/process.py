@@ -1371,7 +1371,7 @@ class Process:
         r_code = """
         analyze_extreme_scenario <- function(model_name, rp, model_df, gmst_df, 
                                             y_start, y_end, y_now, nsamp,dGMST_target, 
-                                            scenario_label, save_dir) {
+                                            scenario_label, dist, type, save_dir) {
             
             cat(paste0("   Scenario [", scenario_label, "]: Years ", y_start, "-", y_end, "\n"))
             
@@ -1385,13 +1385,13 @@ class Process:
             # 2. Fit Model
             mdl <- tryCatch({
                 # Try first with the default optimization method
-                fit_ns(dist = "gev", type = "shift", data = df, 
+                fit_ns(dist = dist, type = type, data = df, 
                     varnm = "value", covnm = "gmst", lower = FALSE)
             }, error = function(e) {
                 # If default fails, try again using Nelder-Mead
                 message(paste("WARNING: Default fit failed for", model_name, "- trying Nelder-Mead..."))
                 tryCatch({
-                    fit_ns(dist = "gev", type = "shift", data = df, 
+                    fit_ns(dist = dist, type = type, data = df, 
                         varnm = "value", covnm = "gmst", lower = FALSE, 
                         method = "Nelder-Mead")
                 }, error = function(e2) {

@@ -131,7 +131,7 @@ class Process:
 
         def apply_roll(group):
             roller = group.set_index(datetime_col)[value_col].rolling(
-                window=padding, min_periods=1, center=centering
+                window=padding, min_periods=padding, center=centering
             )
             if method == "sum":
                 rolled = roller.sum()
@@ -155,7 +155,7 @@ class Process:
         else:
             # single global time series
             roller = gdf.set_index(datetime_col)[value_col].rolling(
-                window=padding, min_periods=1, center=centering
+                window=padding, min_periods=padding, center=centering
             )
             if method == "sum":
                 rolled = roller.sum()
@@ -743,7 +743,7 @@ class Process:
             da = da.sel(time=~((da.time.dt.month == 2) & (da.time.dt.day == 29)))
             # Rolling window on the daily series
             if padding is not None and padding > 1:
-                roller = da.rolling(time=padding, center=True, min_periods=1)
+                roller = da.rolling(time=padding, center=True, min_periods=padding)
                 if method == "mean":
                     da_rolled = roller.mean()
                 elif method == "sum":

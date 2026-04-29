@@ -151,6 +151,419 @@ class MarsClient:
                 ds = ds.assign_coords({coord_name: ds[coord_name].dt.floor("D")})
 
         return ds
+    
+    def fetch_forecast_data(
+        self,
+        variable: MarsVariable,
+        min_date: datetime,
+        max_date: datetime,
+        min_lon: float,
+        max_lon: float,
+        min_lat: float,
+        max_lat: float,
+    ) -> xr.Dataset:
+        """
+        Fetch forecast MARS data for a specific variable.
+
+        Parameters:
+            variable (MarsVariable): Variable selector used to route to the
+                corresponding forecast data retrieval method.
+            min_date (datetime): Start date of the request window.
+            max_date (datetime): End date of the request window.
+            min_lon (float): Minimum longitude of the bounding box.
+            max_lon (float): Maximum longitude of the bounding box.
+            min_lat (float): Minimum latitude of the bounding box.
+            max_lat (float): Maximum latitude of the bounding box.
+
+        Returns:
+            xr.Dataset: Requested forecast dataset.
+
+        Raises:
+            NotImplementedError: If the variable is known but not yet supported.
+            ValueError: If an unknown variable is provided.
+        """
+        if variable == MarsVariable.t2m:
+            return self.fetch_t2m_mean_forecast_data(
+                min_date, max_date, min_lon, max_lon, min_lat, max_lat
+            )
+
+        if variable == MarsVariable.t2m_min:
+            return self.fetch_t2m_min_forecast_data(
+                min_date, max_date, min_lon, max_lon, min_lat, max_lat
+            )
+
+        if variable == MarsVariable.t2m_max:
+            return self.fetch_t2m_max_forecast_data(
+                min_date, max_date, min_lon, max_lon, min_lat, max_lat
+            )
+
+        if variable == MarsVariable.tp:
+            return self.fetch_total_precipitation_forecast_data(
+                min_date, max_date, min_lon, max_lon, min_lat, max_lat
+            )
+
+        if variable == MarsVariable.mslp:
+            return self.fetch_mslp_forecast_data(
+                min_date, max_date, min_lon, max_lon, min_lat, max_lat
+            )
+
+        if variable == MarsVariable.z500:
+            return self.fetch_z500_forecast_data(
+                min_date, max_date, min_lon, max_lon, min_lat, max_lat
+            )
+
+        raise ValueError(f"Unsupported MarsVariable: {variable}")
+
+    
+    def fetch_t2m_mean_forecast_data(
+        self,
+        min_date: datetime,
+        max_date: datetime,
+        min_lon: float,
+        max_lon: float,
+        min_lat: float,
+        max_lat: float
+    ) -> xr.Dataset:
+        # Fetch the current date -7 days as a list of dates
+        current_date = datetime.utcnow() - timedelta(days=1) # Use yesterday's date to compensate for forecast delay
+        date_str = current_date.strftime("%Y-%m-%d")
+        print(f"Fetching t2m forecast data from MARS for date: {date_str}")
+        request = {
+            "class": "od",
+            "date": date_str,
+            "step": "6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186",
+            "expver": "1",
+            "param": self.find_param_code("t2m"), # 2m temperature
+            "grid": "0.25/0.25", # 0.25 degree grid
+            "time": "00:00:00",
+            "class": "od",
+            "levtype": "sfc",
+            "stream": "oper",
+            "type": "fc",
+            "target": "output",
+            "format": "netcdf",
+        }
+        temp_path = self.get_temp_path()
+        self.server.execute(request,target=temp_path)
+        
+        temp_path = self.get_temp_path()
+        self.server.execute(request, target=temp_path)
+
+        # USE CDO to compute daily mean
+        out_daily = temp_path.replace(".nc", "_daily.nc")
+        subprocess.run(
+            [
+                "cdo",
+                "-O",
+                "-r",
+                "-f",
+                "nc4",
+                "-s",
+                f"-daymean",
+                f"-shifttime,3hour",
+                temp_path,
+                out_daily,
+            ],
+            check=True,
+        )
+
+        ds = xr.open_dataset(out_daily, chunks=-1)
+        ds = ds.rename({"time": "valid_time"})
+        return self._normalize_dataset_and_filter_bbox(
+            ds, min_lon, max_lon, min_lat, max_lat
+        )
+        
+    def fetch_t2m_max_forecast_data(
+        self,
+        min_date: datetime,
+        max_date: datetime,
+        min_lon: float,
+        max_lon: float,
+        min_lat: float,
+        max_lat: float
+    ) -> xr.Dataset:
+        # Fetch the current date -7 days as a list of dates
+        current_date = datetime.utcnow() - timedelta(days=1) # Use yesterday's date to compensate for forecast delay
+        date_str = current_date.strftime("%Y-%m-%d")
+        print(f"Fetching tmax forecast data from MARS for date: {date_str}")
+        request = {
+            "class": "od",
+            "date": date_str,
+            "step": "6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186",
+            "expver": "1",
+            "param": self.find_param_code("tmax"), 
+            "grid": "0.25/0.25", # 0.25 degree grid
+            "time": "00:00:00",
+            "class": "od",
+            "levtype": "sfc",
+            "stream": "oper",
+            "type": "fc",
+            "target": "output",
+            "format": "netcdf",
+        }
+        temp_path = self.get_temp_path()
+        self.server.execute(request,target=temp_path)
+        
+        temp_path = self.get_temp_path()
+        self.server.execute(request, target=temp_path)
+
+        # USE CDO to compute daily mean
+        out_daily = temp_path.replace(".nc", "_daily.nc")
+        subprocess.run(
+            [
+                "cdo",
+                "-O",
+                "-r",
+                "-f",
+                "nc4",
+                "-s",
+                f"-daymean",
+                f"-shifttime,3hour",
+                temp_path,
+                out_daily,
+            ],
+            check=True,
+        )
+
+        ds = xr.open_dataset(out_daily, chunks=-1)
+        ds = ds.rename({"time": "valid_time"})
+        return self._normalize_dataset_and_filter_bbox(
+            ds, min_lon, max_lon, min_lat, max_lat
+        )
+        
+    def fetch_t2m_min_forecast_data(
+        self,
+        min_date: datetime,
+        max_date: datetime,
+        min_lon: float,
+        max_lon: float,
+        min_lat: float,
+        max_lat: float
+    ) -> xr.Dataset:
+        # Fetch the current date -7 days as a list of dates
+        current_date = datetime.utcnow() - timedelta(days=1) # Use yesterday's date to compensate for forecast delay
+        date_str = current_date.strftime("%Y-%m-%d")
+        print(f"Fetching tmin forecast data from MARS for date: {date_str}")
+        request = {
+            "class": "od",
+            "date": date_str,
+            "step": "6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186",
+            "expver": "1",
+            "param": self.find_param_code("tmin"), 
+            "grid": "0.25/0.25", # 0.25 degree grid
+            "time": "00:00:00",
+            "class": "od",
+            "levtype": "sfc",
+            "stream": "oper",
+            "type": "fc",
+            "target": "output",
+            "format": "netcdf",
+        }
+        temp_path = self.get_temp_path()
+        self.server.execute(request,target=temp_path)
+        
+        temp_path = self.get_temp_path()
+        self.server.execute(request, target=temp_path)
+
+        # USE CDO to compute daily mean
+        out_daily = temp_path.replace(".nc", "_daily.nc")
+        subprocess.run(
+            [
+                "cdo",
+                "-O",
+                "-r",
+                "-f",
+                "nc4",
+                "-s",
+                f"-daymean",
+                f"-shifttime,3hour",
+                temp_path,
+                out_daily,
+            ],
+            check=True,
+        )
+
+        ds = xr.open_dataset(out_daily, chunks=-1)
+        ds = ds.rename({"time": "valid_time"})
+        return self._normalize_dataset_and_filter_bbox(
+            ds, min_lon, max_lon, min_lat, max_lat
+        )
+        
+    def fetch_mslp_forecast_data(
+        self,
+        min_date: datetime,
+        max_date: datetime,
+        min_lon: float,
+        max_lon: float,
+        min_lat: float,
+        max_lat: float
+    ) -> xr.Dataset:
+        # Fetch the current date -7 days as a list of dates
+        current_date = datetime.utcnow() - timedelta(days=1) # Use yesterday's date to compensate for forecast delay
+        date_str = current_date.strftime("%Y-%m-%d")
+        print(f"Fetching mslp forecast data from MARS for date: {date_str}")
+        request = {
+            "class": "od",
+            "date": date_str,
+            "step": "6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186",
+            "expver": "1",
+            "param": self.find_param_code("mslp"),
+            "grid": "0.25/0.25", # 0.25 degree grid
+            "time": "00:00:00",
+            "class": "od",
+            "levtype": "sfc",
+            "stream": "oper",
+            "type": "fc",
+            "target": "output",
+            "format": "netcdf",
+        }
+        temp_path = self.get_temp_path()
+        self.server.execute(request,target=temp_path)
+        
+        temp_path = self.get_temp_path()
+        self.server.execute(request, target=temp_path)
+
+        # USE CDO to compute daily mean
+        out_daily = temp_path.replace(".nc", "_daily.nc")
+        subprocess.run(
+            [
+                "cdo",
+                "-O",
+                "-r",
+                "-f",
+                "nc4",
+                "-s",
+                f"-daymean",
+                f"-shifttime,3hour",
+                temp_path,
+                out_daily,
+            ],
+            check=True,
+        )
+
+        ds = xr.open_dataset(out_daily, chunks=-1)
+        ds = ds.rename({"time": "valid_time"})
+        return self._normalize_dataset_and_filter_bbox(
+            ds, min_lon, max_lon, min_lat, max_lat
+        )
+        
+    def fetch_total_precipitation_forecast_data(
+        self,
+        min_date: datetime,
+        max_date: datetime,
+        min_lon: float,
+        max_lon: float,
+        min_lat: float,
+        max_lat: float
+    ) -> xr.Dataset:
+        # Fetch the current date -7 days as a list of dates
+        current_date = datetime.utcnow() - timedelta(days=1) # Use yesterday's date to compensate for forecast delay
+        date_str = current_date.strftime("%Y-%m-%d")
+        print(f"Fetching total precipitation forecast data from MARS for date: {date_str}")
+        request = {
+            "class": "od",
+            "date": date_str,
+            "step": "6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186",
+            "expver": "1",
+            "param": self.find_param_code("tp"),
+            "grid": "0.25/0.25", # 0.25 degree grid
+            "time": "00:00:00",
+            "class": "od",
+            "levtype": "sfc",
+            "stream": "oper",
+            "type": "fc",
+            "target": "output",
+            "format": "netcdf",
+        }
+        temp_path = self.get_temp_path()
+        self.server.execute(request,target=temp_path)
+        
+        temp_path = self.get_temp_path()
+        self.server.execute(request, target=temp_path)
+
+        # USE CDO to compute daily mean
+        out_daily = temp_path.replace(".nc", "_daily.nc")
+        subprocess.run(
+            [
+                "cdo",
+                "-O",
+                "-r",
+                "-f",
+                "nc4",
+                "-s",
+                f"-daymean",
+                f"-shifttime,3hour",
+                temp_path,
+                out_daily,
+            ],
+            check=True,
+        )
+
+        ds = xr.open_dataset(out_daily, chunks=-1)
+        ds = ds.rename({"time": "valid_time"})
+        return self._normalize_dataset_and_filter_bbox(
+            ds, min_lon, max_lon, min_lat, max_lat
+        )
+        
+    def fetch_z500_forecast_data(
+        self,
+        min_date: datetime,
+        max_date: datetime,
+        min_lon: float,
+        max_lon: float,
+        min_lat: float,
+        max_lat: float
+    ) -> xr.Dataset:
+        # Fetch the current date -7 days as a list of dates
+        current_date = datetime.utcnow() - timedelta(days=1) # Use yesterday's date to compensate for forecast delay
+        date_str = current_date.strftime("%Y-%m-%d")
+        print(f"Fetching z500 forecast data from MARS for date: {date_str}")
+        request = {
+            "class": "od",
+            "date": date_str,
+            "step": "6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186",
+            "expver": "1",
+            "param": self.find_param_code("z500"),
+            "grid": "0.25/0.25", # 0.25 degree grid
+            "time": "00:00:00",
+            "class": "od",
+            "levtype": "pl",
+            "levelist": "500",
+            "stream": "oper",
+            "type": "fc",
+            "target": "output",
+            "format": "netcdf",
+        }
+        
+        temp_path = self.get_temp_path()
+        self.server.execute(request,target=temp_path)
+        
+        temp_path = self.get_temp_path()
+        self.server.execute(request, target=temp_path)
+
+        # USE CDO to compute daily mean
+        out_daily = temp_path.replace(".nc", "_daily.nc")
+        subprocess.run(
+            [
+                "cdo",
+                "-O",
+                "-r",
+                "-f",
+                "nc4",
+                "-s",
+                f"-daymean",
+                f"-shifttime,3hour",
+                temp_path,
+                out_daily,
+            ],
+            check=True,
+        )
+
+        ds = xr.open_dataset(out_daily, chunks=-1)
+        ds = ds.rename({"time": "valid_time"})
+        return self._normalize_dataset_and_filter_bbox(
+            ds, min_lon, max_lon, min_lat, max_lat
+        )
         
     def fetch_operational_data(
         self,
@@ -259,7 +672,6 @@ class MarsClient:
             "param": self.find_param_code("t2m"),  # 2m temperature
             "grid": "0.25/0.25",  # 0.25 degree grid
             "time": time,
-            "format": format,
             "class": "od",
             "levtype": "sfc",
             "stream": "oper",
@@ -320,7 +732,6 @@ class MarsClient:
             "param": self.find_param_code("mslp"),
             "grid": "0.25/0.25",
             "time": time,
-            "format": format,
             "class": "od",
             "levtype": "sfc",
             "stream": "oper",
@@ -385,7 +796,6 @@ class MarsClient:
             "param": self.find_param_code("z500"),
             "grid": "0.25/0.25",
             "time": time,
-            "format": format,
             "class": "od",
             "levtype": "pl",
             "levelist": "500",
@@ -471,7 +881,6 @@ class MarsClient:
             "param": self.find_param_code("tmin"),  # 2m temperature
             "grid": "0.25/0.25",  # 0.25 degree grid
             "time": time,
-            "format": format,
             "class": "od",
             "levtype": "sfc",
             "stream": "oper",
@@ -554,7 +963,6 @@ class MarsClient:
             "param": self.find_param_code("tmax"),  # 2m temperature
             "grid": "0.25/0.25",  # 0.25 degree grid
             "time": time,
-            "format": format,
             "class": "od",
             "levtype": "sfc",
             "stream": "oper",
@@ -635,7 +1043,6 @@ class MarsClient:
             "param": self.find_param_code("tp"),  # total precipitation
             "grid": "0.25/0.25",  # 0.25 degree grid
             "time": time,
-            "format": format,
             "class": "od",
             "levtype": "sfc",
             "stream": "oper",

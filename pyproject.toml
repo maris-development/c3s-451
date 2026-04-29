@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "c3s-event-attribution-tools"
-version = "0.3.0"  
+version = "0.3.1"  
 description = "C3S 451 Event attribution tools library for Python"
 readme = "README.md"
 requires-python = ">=3.7"

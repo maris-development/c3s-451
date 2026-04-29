@@ -1088,7 +1088,7 @@ class Analogues:
             iris.coord_categorisation.add_year(cube, 'time')
 
         # is this actually checking if the Y1 and Y2 are in cube year range?
-        rCube = cube.extract(iris.Constraint(year=lambda cell: Y1 <= cell < Y2))
+        rCube = cube.extract(iris.Constraint(year=lambda cell: Y1 <= cell <= Y2))
         return rCube
 
     @staticmethod
@@ -1145,22 +1145,17 @@ class Analogues:
             a minimum separation in time between events.
         '''
 
-        def cube_date_to_string(cube_date : tuple) -> tuple:
-            year,month,day,time = cube_date
-            return str(year)+str(month).zfill(2)+str(day).zfill(2), time
-
+        
         D = Analogues.euclidean_distance(daily_cube, event_cube)
-        date_list = []
 
-        for i in np.arange(N):
-            #Utils.print(i)
-            I = np.sort(D)[i]
-            for n, each in enumerate(D):
-                if I == each:
-                    a1 = n
-            date, time = cube_date_to_string(Analogues.cube_date(daily_cube[a1,...]))
-            date_list.append(date)
-            date_list2 = Analogues.date_list_checks(date_list, days_apart=5)
+        time_coord = daily_cube.coord("time")
+        dates = time_coord.units.num2date(time_coord.points)
+        time_str = [f"{d.year:04d}-{d.month:02d}-{d.day:02d}" for d in dates]
+
+        ec_df=pd.DataFrame({'date':time_str,'distance':D})
+        top_N_analogues=Analogues.top_separate_analogues_df(ec_df,N)
+        date_list2 = top_N_analogues["date"].dt.strftime("%Y%m%d").tolist()
+
         return date_list2
 
     # anaomaly period output for cubes
@@ -1200,10 +1195,8 @@ class Analogues:
         # single day
         event_cube = event_cube - event_cube.collapsed(['latitude', 'longitude'], iris.analysis.MEAN) # event for anavar to plot (fig a)
 
-        P1_dates = Analogues.analogue_dates_v3(daily_cube, event_cube, N*5)[:N]
+        P1_dates = Analogues.analogue_dates_v3(daily_cube, event_cube, N)
 
-        if str(date[0])+str("{:02d}".format(list(calendar.month_abbr).index(date[1])))+str(date[2]) in P1_dates: # Remove the date being searched for
-            P1_dates.remove(str(date[0])+str("{:02d}".format(list(calendar.month_abbr).index(date[1])))+str(date[2]))
 
         return P1_dates
 

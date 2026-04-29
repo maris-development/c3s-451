@@ -266,6 +266,24 @@ class DataClient():
 
                         ds_for_range = xr.concat([ds_for_range, mars_ds], dim='valid_time', data_vars=XR_CONCAT_DATA_VARS)
 
+                    # Check if we need to retrieve forecast data from MARS to fill the gap between the last day in ds_for_range and the requested end date.
+                    max_after_ops = ds_for_range['valid_time'].values.max().astype('datetime64[D]')
+                    forecast_start = pd.to_datetime(max_after_ops + np.timedelta64(1, 'D')).to_pydatetime()
+                    forecast_end = time_range[1]
+
+                    if forecast_start <= forecast_end:
+                        Utils.print(f"Fetching forecast data from MARS for range: {forecast_start} - {forecast_end}")
+                        forecast_ds = self.mars_client.fetch_forecast_data(
+                            variable=variable.mars_variable(),
+                            min_date=forecast_start,
+                            max_date=forecast_end,
+                            min_lon=min_lon,
+                            max_lon=max_lon,
+                            min_lat=min_lat,
+                            max_lat=max_lat,
+                        )
+                        ds_for_range = xr.concat([ds_for_range, forecast_ds], dim='valid_time', data_vars=XR_CONCAT_DATA_VARS)
+
                 except Exception as e:
                     Utils.print(f"Error while backfilling missing data from MARS: {e}")
 
@@ -474,6 +492,23 @@ class DataClient():
 
                         ds_for_range = xr.concat([ds_for_range, mars_ds], dim='valid_time', data_vars=XR_CONCAT_DATA_VARS)
 
+                    # Check if we need to retrieve forecast data from MARS to fill the gap between the last day in ds_for_range and the requested end date.
+                    max_after_ops = ds_for_range['valid_time'].values.max().astype('datetime64[D]')
+                    forecast_start = pd.to_datetime(max_after_ops + np.timedelta64(1, 'D')).to_pydatetime()
+                    forecast_end = time_range[1]
+
+                    if forecast_start <= forecast_end:
+                        Utils.print(f"Fetching forecast data from MARS for range: {forecast_start} - {forecast_end}")
+                        forecast_ds = self.mars_client.fetch_forecast_data(
+                            variable=variable.mars_variable(),
+                            min_date=forecast_start,
+                            max_date=forecast_end,
+                            min_lon=min_lon,
+                            max_lon=max_lon,
+                            min_lat=min_lat,
+                            max_lat=max_lat,
+                        )
+                        ds_for_range = xr.concat([ds_for_range, forecast_ds], dim='valid_time', data_vars=XR_CONCAT_DATA_VARS)
                 except Exception as e:
                     Utils.print(f"Error while backfilling missing data from MARS: {e}")
 

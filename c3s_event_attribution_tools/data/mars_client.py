@@ -336,7 +336,7 @@ class MarsClient:
         )
 
         ds = xr.open_dataset(out_daily, chunks=-1)
-        ds = ds.rename({"time": "valid_time"})
+        ds = ds.rename({"mx2t6": "t2m", "time": "valid_time"})
         
         ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat
@@ -403,7 +403,7 @@ class MarsClient:
         )
 
         ds = xr.open_dataset(out_daily, chunks=-1)
-        ds = ds.rename({"time": "valid_time"})
+        ds = ds.rename({"mn2t6": "t2m", "time": "valid_time"})
         
         ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat

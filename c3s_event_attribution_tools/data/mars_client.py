@@ -2,6 +2,7 @@ from ecmwfapi import ECMWFService
 from datetime import datetime, timedelta
 import shutil, subprocess
 import xarray as xr
+import numpy as np
 import iris  # type: ignore
 import tempfile
 
@@ -269,9 +270,18 @@ class MarsClient:
 
         ds = xr.open_dataset(out_daily, chunks=-1)
         ds = ds.rename({"time": "valid_time"})
-        return self._normalize_dataset_and_filter_bbox(
+        
+        ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat
         )
+        
+        # Filter by time
+        ds = ds.where((ds.valid_time >= np.datetime64(min_date)) & (ds.valid_time <= np.datetime64(max_date)), drop=True)
+        # Remove time_bnds if it exists to avoid issues with CDO output
+        if "time_bnds" in ds.variables:
+            ds = ds.drop_vars("time_bnds")
+            
+        return ds
         
     def fetch_t2m_max_forecast_data(
         self,
@@ -327,9 +337,18 @@ class MarsClient:
 
         ds = xr.open_dataset(out_daily, chunks=-1)
         ds = ds.rename({"time": "valid_time"})
-        return self._normalize_dataset_and_filter_bbox(
+        
+        ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat
         )
+        
+        # Filter by time
+        ds = ds.where((ds.valid_time >= np.datetime64(min_date)) & (ds.valid_time <= np.datetime64(max_date)), drop=True)
+        # Remove time_bnds if it exists to avoid issues with CDO output
+        if "time_bnds" in ds.variables:
+            ds = ds.drop_vars("time_bnds")
+            
+        return ds
         
     def fetch_t2m_min_forecast_data(
         self,
@@ -385,9 +404,18 @@ class MarsClient:
 
         ds = xr.open_dataset(out_daily, chunks=-1)
         ds = ds.rename({"time": "valid_time"})
-        return self._normalize_dataset_and_filter_bbox(
+        
+        ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat
         )
+        
+        # Filter by time
+        ds = ds.where((ds.valid_time >= np.datetime64(min_date)) & (ds.valid_time <= np.datetime64(max_date)), drop=True)
+        # Remove time_bnds if it exists to avoid issues with CDO output
+        if "time_bnds" in ds.variables:
+            ds = ds.drop_vars("time_bnds")
+            
+        return ds
         
     def fetch_mslp_forecast_data(
         self,
@@ -443,9 +471,18 @@ class MarsClient:
 
         ds = xr.open_dataset(out_daily, chunks=-1)
         ds = ds.rename({"time": "valid_time"})
-        return self._normalize_dataset_and_filter_bbox(
+
+        ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat
         )
+        
+        # Filter by time
+        ds = ds.where((ds.valid_time >= np.datetime64(min_date)) & (ds.valid_time <= np.datetime64(max_date)), drop=True)
+        # Remove time_bnds if it exists to avoid issues with CDO output
+        if "time_bnds" in ds.variables:
+            ds = ds.drop_vars("time_bnds")
+            
+        return ds
         
     def fetch_total_precipitation_forecast_data(
         self,
@@ -501,9 +538,18 @@ class MarsClient:
 
         ds = xr.open_dataset(out_daily, chunks=-1)
         ds = ds.rename({"time": "valid_time"})
-        return self._normalize_dataset_and_filter_bbox(
+
+        ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat
         )
+        
+        # Filter by time
+        ds = ds.where((ds.valid_time >= np.datetime64(min_date)) & (ds.valid_time <= np.datetime64(max_date)), drop=True)
+        # Remove time_bnds if it exists to avoid issues with CDO output
+        if "time_bnds" in ds.variables:
+            ds = ds.drop_vars("time_bnds")
+            
+        return ds
         
     def fetch_z500_forecast_data(
         self,
@@ -561,9 +607,18 @@ class MarsClient:
 
         ds = xr.open_dataset(out_daily, chunks=-1)
         ds = ds.rename({"time": "valid_time"})
-        return self._normalize_dataset_and_filter_bbox(
+
+        ds = self._normalize_dataset_and_filter_bbox(
             ds, min_lon, max_lon, min_lat, max_lat
         )
+        
+        # Filter by time
+        ds = ds.where((ds.valid_time >= np.datetime64(min_date)) & (ds.valid_time <= np.datetime64(max_date)), drop=True)
+        # Remove time_bnds if it exists to avoid issues with CDO output
+        if "time_bnds" in ds.variables:
+            ds = ds.drop_vars("time_bnds")
+            
+        return ds
         
     def fetch_operational_data(
         self,

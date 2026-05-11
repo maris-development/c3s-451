@@ -1185,6 +1185,33 @@ class DataClient():
         ds['t2m'].values = Conversions.convert_temperature(ds['t2m'].values, from_unit, to_unit)
         return ds # type: ignore
     
+    def fetch_era5_monthly_single_levels_xr(self, variable: Variable.ERA5MonthlySingleLevel, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], from_unit:str|None = None, to_unit:str|None = None) -> xr.Dataset | None:
+        if bbox is None:
+            bbox = (-180.0, -90.0, 180.0, 90.0)
+        
+        ds = self.cds_client._fetch_data_monthly_averaged_xr(variable.cds_name(), bbox, time_range)
+        ds = ds.rename(variable.cds_variable_renames())
+        # Concatenate all Datasets
+        if from_unit and to_unit and variable.column_name() in ds:
+            ds[variable.column_name()].values = Conversions.convert_unit(ds[variable.column_name()].values, from_unit, to_unit)
+        
+        return ds # type: ignore
+    
+    def fetch_oras5_monthly_single_levels_xr(self, variable: Variable.ORAS5MonthlySingleLevel, bbox: tuple[float,float,float,float], time_range: tuple[datetime,datetime], from_unit:str|None = None, to_unit:str|None = None) -> xr.Dataset | None:
+        if bbox is None:
+            bbox = (-180.0, -90.0, 180.0, 90.0)
+        
+        ds = self.cds_client.fetch_oras5_monthly_averaged_xr(variable.cds_name(), bbox, time_range)
+        ds = ds.rename(variable.cds_variable_renames())
+        # Concatenate all Datasets
+        if from_unit and to_unit and variable.column_name() in ds:
+            ds[variable.column_name()].values = Conversions.convert_unit(ds[variable.column_name()].values, from_unit, to_unit)
+        
+        ds = ds[["time", "latitude", "longitude", variable.column_name()]]
+        
+        return ds # type: ignore
+        
+    
     def fetch_cmip5_monthly_single_levels_xr(self, experiment:str, variable: Variable.CMIP5Monthly, model: str, ensemble_member: str, period: str) -> xr.Dataset:
         """
         Fetch CMIP5 monthly data from CDS as an xarray Dataset.

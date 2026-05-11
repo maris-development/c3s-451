@@ -267,4 +267,84 @@ class Variable:
             }
             return translation_dict[self]
         
-    
+    class ERA5MonthlySingleLevel(Enum):
+        temperature_2m_mean = 1 # 2 meter temperature mean
+        total_precipitation = 2 # total precipitation
+        
+        def cds_name(self) -> str:
+            """
+            Get the corresponding CDS variable name.
+
+            Returns:
+                str: The CDS variable name.
+            """
+            translation_dict = {
+                Variable.ERA5MonthlySingleLevel.temperature_2m_mean: '2m_temperature',
+                Variable.ERA5MonthlySingleLevel.total_precipitation: 'total_precipitation',
+            }
+            return translation_dict[self]
+        
+        def cds_variable_renames(self) -> dict[str, str]:
+            """
+            Get the renaming dictionary for CDS variable names to standard names.
+
+            Returns:
+                dict: A dictionary mapping CDS variable names to standard names.
+            """
+            translation_dict = {
+                Variable.ERA5MonthlySingleLevel.temperature_2m_mean: {'t2m': 't2m'},
+                Variable.ERA5MonthlySingleLevel.total_precipitation: {'tp': 'tp'},
+            }
+            return translation_dict[self]
+        
+        def column_name(self) -> str:
+            """
+            Get the corresponding column name for dataframes.
+
+            Returns:
+                str: The column name.
+            """
+            translation_dict = {
+                Variable.ERA5MonthlySingleLevel.temperature_2m_mean: 't2m',
+                Variable.ERA5MonthlySingleLevel.total_precipitation: 'tp',
+            }
+            return translation_dict[self]
+        
+    class ORAS5MonthlySingleLevel(Enum):
+        sea_surface_temperature = 1 # sea surface temperature
+        
+        def cds_name(self) -> str:
+            """
+            Get the corresponding CDS variable name.
+
+            Returns:
+                str: The CDS variable name.
+            """
+            translation_dict = {
+                Variable.ORAS5MonthlySingleLevel.sea_surface_temperature: 'sosstsst',
+            }
+            return translation_dict[self]
+        
+        def cds_variable_renames(self) -> dict[str, str]:
+            """
+            Get the renaming dictionary for CDS variable names to standard names.
+
+            Returns:
+                dict: A dictionary mapping CDS variable names to standard names.
+            """
+            translation_dict = {
+                Variable.ORAS5MonthlySingleLevel.sea_surface_temperature: {'sosstsst': 'sst'},
+            }
+            return translation_dict[self]
+        
+        def column_name(self) -> str:
+            """
+            Get the corresponding column name for dataframes.
+
+            Returns:
+                str: The column name.
+            """
+            translation_dict = {
+                Variable.ORAS5MonthlySingleLevel.sea_surface_temperature: 'sst',
+            }
+            return translation_dict[self]

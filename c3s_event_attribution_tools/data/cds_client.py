@@ -31,7 +31,7 @@ class CDSClient():
                 Climate Data Store.
         """
         self.cds_client = Client(self.CDS_API_URL, key=cds_key)
-        
+        self.cds_key = cds_key
         if cache_directory:
             self.cache_directory = cache_directory
         else:
@@ -43,7 +43,7 @@ class CDSClient():
             os.makedirs(self.cache_directory)
             
         return self.cache_directory
-
+    
     def _build_request_monthly_averaged(self, variable: str, time_range: tuple[datetime, datetime], bbox: tuple[float, float, float, float]) -> dict:
         """
         Build a dictionary request for monthly averaged ERA5 reanalysis data.
@@ -149,6 +149,53 @@ class CDSClient():
         gdf = gdf[(gdf['valid_time'] >= time_range[0]) & (gdf['valid_time'] <= time_range[1])]
 
         return gdf
+    
+    def fetch_oras5_monthly_averaged_xr(self, variable: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime]) -> xr.Dataset:
+        min_lon, min_lat, max_lon, max_lat = bbox
+        
+        consolidated_url = "https://arco.datastores.ecmwf.int/cadl-arco-geo-001/arco/reanalysis_oras5/consolidated/geoChunked.zarr"
+
+        # Operational product (2015-present)
+        operational_url = "https://arco.datastores.ecmwf.int/cadl-arco-geo-001/arco/reanalysis_oras5/operational/geoChunked.zarr"
+
+        ds_consolidated = xr.open_zarr(
+            consolidated_url,
+            consolidated=True,
+            storage_options={
+                "headers": {"Authorization": f"Bearer {self.cds_key}"}
+            }
+        )
+        
+        ds_operational = xr.open_zarr(
+            operational_url,
+            consolidated=True,
+            storage_options={
+                "headers": {"Authorization": f"Bearer {self.cds_key}"}
+            }
+        )
+        
+        ds_consolidated = ds_consolidated.where(
+            (ds_consolidated["longitude"] >= min_lon)
+            & (ds_consolidated["longitude"] <= max_lon)
+            & (ds_consolidated["latitude"] >= min_lat)
+            & (ds_consolidated["latitude"] <= max_lat),
+            drop=True
+        )
+        ds_consolidated = ds_consolidated.sel(time=slice(time_range[0], time_range[1]))
+        
+        ds_operational = ds_operational.where(
+            (ds_operational["longitude"] >= min_lon)
+            & (ds_operational["longitude"] <= max_lon)
+            & (ds_operational["latitude"] >= min_lat)
+            & (ds_operational["latitude"] <= max_lat),
+            drop=True
+        )
+        
+        ds_operational = ds_operational.sel(time=slice(time_range[0], time_range[1]))
+        
+        # Concat the dataframes
+        ds = xr.concat([ds_consolidated, ds_operational], dim="time")
+        return ds
     
     def _build_request_pressure_levels(self, variables: list[str], bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime], levels: list[int], daily_statistic: str = "daily_mean") -> dict:
         """

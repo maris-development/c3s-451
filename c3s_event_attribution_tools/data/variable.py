@@ -11,6 +11,8 @@ class MarsVariable(Enum):
 class Variable:
     class CMIP5Monthly(Enum):
         temperature_2m = 1 # 2 meter temperature
+        sea_surface_temperature = 2 # sea surface temperature
+        mean_precipitation_flux = 3 # mean precipitation flux
         
         def cds_name(self) -> str:
             """
@@ -21,6 +23,8 @@ class Variable:
             """
             translation_dict = {
                 Variable.CMIP5Monthly.temperature_2m: '2m_temperature',
+                Variable.CMIP5Monthly.sea_surface_temperature: 'sea_surface_temperature',
+                Variable.CMIP5Monthly.mean_precipitation_flux: 'mean_precipitation_flux',
             }
             return translation_dict[self]
         
@@ -33,6 +37,8 @@ class Variable:
             """
             translation_dict = {
                 Variable.CMIP5Monthly.temperature_2m: 't2m',
+                Variable.CMIP5Monthly.sea_surface_temperature: 'sst',
+                Variable.CMIP5Monthly.mean_precipitation_flux: 'pr',
             }
             return translation_dict[self]
 
@@ -41,6 +47,7 @@ class Variable:
         daily_maximum_near_surface_air_temperature = 2 # maximum daily near surface air temperature
         daily_minimum_near_surface_air_temperature = 3 # minimum daily near surface air temperature
         precipitation = 4 # precipitation
+        sea_surface_temperature = 5 # sea surface temperature
         
         def cds_name(self) -> str:
             """
@@ -54,6 +61,8 @@ class Variable:
                 Variable.CMIP6.daily_maximum_near_surface_air_temperature: 'daily_maximum_near_surface_air_temperature',
                 Variable.CMIP6.daily_minimum_near_surface_air_temperature: 'daily_minimum_near_surface_air_temperature',
                 Variable.CMIP6.precipitation: 'precipitation',
+                Variable.CMIP6.sea_surface_temperature: 'sea_surface_temperature',
+
             }
             return translation_dict[self]
         
@@ -69,6 +78,7 @@ class Variable:
                 Variable.CMIP6.daily_maximum_near_surface_air_temperature: 'tasmax',
                 Variable.CMIP6.daily_minimum_near_surface_air_temperature: 'tasmin',
                 Variable.CMIP6.precipitation: 'pr',
+                Variable.CMIP6.sea_surface_temperature: 'sst',
             }
             return translation_dict[self]
         
@@ -78,6 +88,7 @@ class Variable:
         temperature_2m_min = 3 # 2 meter temperature min
         total_precipitation = 4 # total precipitation
         mean_sea_level_pressure = 5 # mean sea level pressure
+
         
         def cds_name(self) -> str:
             """
@@ -270,6 +281,7 @@ class Variable:
     class ERA5MonthlySingleLevel(Enum):
         temperature_2m_mean = 1 # 2 meter temperature mean
         total_precipitation = 2 # total precipitation
+        sea_surface_temperature = 3 # sea surface temperature
         
         def cds_name(self) -> str:
             """
@@ -281,6 +293,8 @@ class Variable:
             translation_dict = {
                 Variable.ERA5MonthlySingleLevel.temperature_2m_mean: '2m_temperature',
                 Variable.ERA5MonthlySingleLevel.total_precipitation: 'total_precipitation',
+                Variable.ERA5MonthlySingleLevel.sea_surface_temperature: 'sea_surface_temperature',
+
             }
             return translation_dict[self]
         
@@ -294,7 +308,9 @@ class Variable:
             translation_dict = {
                 Variable.ERA5MonthlySingleLevel.temperature_2m_mean: {'t2m': 't2m'},
                 Variable.ERA5MonthlySingleLevel.total_precipitation: {'tp': 'tp'},
+                Variable.ERA5MonthlySingleLevel.sea_surface_temperature: {'sst': 'sst'},
             }
+
             return translation_dict[self]
         
         def column_name(self) -> str:
@@ -307,6 +323,7 @@ class Variable:
             translation_dict = {
                 Variable.ERA5MonthlySingleLevel.temperature_2m_mean: 't2m',
                 Variable.ERA5MonthlySingleLevel.total_precipitation: 'tp',
+                Variable.ERA5MonthlySingleLevel.sea_surface_temperature: 'sst',
             }
             return translation_dict[self]
         

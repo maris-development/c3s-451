@@ -280,47 +280,57 @@ class Utils:
                 A base64-encoded PNG image string of the generated plot.
         '''
 
-        selected_gdf_anomoly = gdf[(gdf[datetime_col] >= date) & (gdf[datetime_col] <= date)]
+        selected_gdf_anomaly = gdf[(gdf[datetime_col] >= date) & (gdf[datetime_col] <= date)].copy()
 
         vmin = gdf[value_col].min()
         vmax = gdf[value_col].max()
-
         cmap, norm = Plot.get_colormap(cmap if cmap else value_col, vmin, vmax)
 
-
+        # Force the map canvas to stretch into Web Mercator
         fig, ax = plt.subplots(
             ncols = 1, nrows = 1, figsize = (5,5), dpi = dpi, 
-            subplot_kw = {"projection" : projection}
+            subplot_kw = {"projection" : ccrs.Mercator()} 
         )
-
-        # ax.plot(selected_gdf_anomoly['longitude'], selected_gdf_anomoly['latitude'], "o", markersize=1)  # markersize = diameter in points
 
         temp_kwargs = {"cmap" : cmap, "norm": norm}
 
         cell_size = 0.25  # degrees
-        selected_gdf_anomoly["geometry"] = selected_gdf_anomoly.geometry.apply(
+        selected_gdf_anomaly["geometry"] = selected_gdf_anomaly.geometry.apply(
                 lambda p: box(p.x - cell_size/2, p.y - cell_size/2,
                             p.x + cell_size/2, p.y + cell_size/2)
             )
 
-        selected_gdf_anomoly.plot(ax = ax, **temp_kwargs,
-            column = value_col,
-            vmin = vmin,
-            vmax = vmax,
-            marker = marker
+        # Tell Cartopy to take the degree boxes and warp them onto the Mercator canvas
+        selected_gdf_anomaly.plot(
+            ax = ax, 
+            **temp_kwargs, 
+            column = value_col, 
+            vmin = vmin, 
+            vmax = vmax, 
+            marker = marker,
+            transform = ccrs.PlateCarree() # <--- This is the secret ingredient!
         )
 
-        ax.set_axis_off()
+        # Snap exactly to the full dataset bounds so Matplotlib can't pad it
+        minx, miny, maxx, maxy = gdf.total_bounds
+        ax.set_extent([minx, maxx, miny, maxy], crs=ccrs.PlateCarree())
+
+        # 4. Debug Mode: If you pass show_fig=True, it draws black coastlines so you can verify the warp
+        if show_fig:
+            ax.coastlines(color='black', linewidth=1)
+            ax.set_axis_on()
+        else:
+            ax.set_axis_off()
+
         plt.tight_layout()
 
-        # Save to memory buffer instead of file
         buf = BytesIO()
         plt.savefig(buf, format="png", dpi=100, transparent=True, bbox_inches="tight", pad_inches=0)
+        
         if not show_fig:
-            plt.close(fig)  # Close the figure to avoid displaying it in non-interactive environments
+            plt.close(fig) 
         buf.seek(0)
 
-        # Encode to base64
         img_base64 = base64.b64encode(buf.read()).decode("utf-8")
         buf.close()
 

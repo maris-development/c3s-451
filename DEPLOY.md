@@ -11,17 +11,17 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 First increase version in pyproject.toml & commit changes.
 ```
 git add .
-git commit -m "chore: bump version to 0.3.3"
+git commit -m "chore: bump version to 0.3.4"
 git push origin main
 ```
 
 Then create a tag, make sure this is the same version as the pyproject.toml (and increase if needed)
 ```bash 
-git tag v0.3.2
+git tag v0.3.4
 ```
 Then push the tag: (this will update documentation with github actions)
 ```bash
-git push origin v0.3.0
+git push origin v0.3.4
 ```
 
 1. **Build and Publish**:

@@ -662,10 +662,15 @@ class CDSClient():
     def fetch_cmip6_xr(self, variable: Variable.CMIP6, model: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime], experiment: str = "ssp5_8_5", temporal_resolution: str = "daily") -> xr.Dataset:
         file = self._fetch_data_cmip6_netcdf(variable, model, bbox, time_range, experiment, temporal_resolution)
         ds = xr.open_dataset(file)
+
+        if "longitude" in ds.coords and "latitude" in ds.coords:
+            ds = ds.rename({"longitude": "lon", "latitude": "lat", "time": "time"})
         # Wrap longitude to -180 to 180
-        ds = ds.assign_coords(
-            lon=((ds.lon + 180) % 360) - 180
-        ).sortby("lon")
+        # For regular grids lon is 1D and can be sorted; for curvilinear grids
+        # (e.g. SST, ocean variables) lon is 2D (j, i) and sortby is not applicable.
+        ds = ds.assign_coords(lon=((ds.lon + 180) % 360) - 180)
+        if ds.lon.ndim == 1:
+            ds = ds.sortby("lon")
         
         # Convert filter time range to approriate calender
         xr_time_start = Utils.datetime_to_xr_time(time_range[0], ds)
@@ -698,10 +703,14 @@ class CDSClient():
         file = self.fetch_monthly_single_levels_cmip5_netcdf(experiment, variable, model, ensemble_member, period)
         ds = xr.open_dataset(file)
         
+        if "longitude" in ds.coords and "latitude" in ds.coords:
+            ds = ds.rename({"longitude": "lon", "latitude": "lat", "time": "time"})
         # Wrap longitude to -180 to 180
-        ds = ds.assign_coords(
-            lon=((ds.lon + 180) % 360) - 180
-        ).sortby("lon")
+        # For regular grids lon is 1D and can be sorted; for curvilinear grids
+        # (e.g. SST, ocean variables) lon is 2D (j, i) and sortby is not applicable.
+        ds = ds.assign_coords(lon=((ds.lon + 180) % 360) - 180)
+        if ds.lon.ndim == 1:
+            ds = ds.sortby("lon")
                 
         return ds
     

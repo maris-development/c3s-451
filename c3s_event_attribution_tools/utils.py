@@ -282,9 +282,16 @@ class Utils:
 
         selected_gdf_anomaly = gdf[(gdf[datetime_col] >= date) & (gdf[datetime_col] <= date)].copy()
 
+        if cmap == 'anomaly' and value_col in ["tp"]:
+            gdf = gdf.copy()
+            gdf[value_col] = gdf[value_col].clip(lower=-0.5, upper=None)
+            selected_gdf_anomoly = selected_gdf_anomoly.copy()
+            selected_gdf_anomoly[value_col] = selected_gdf_anomoly[value_col].clip(lower=-0.5, upper=None)
+
         vmin = gdf[value_col].min()
         vmax = gdf[value_col].max()
-        cmap, norm = Plot.get_colormap(cmap if cmap else value_col, vmin, vmax)
+
+        cmap, norm = Plot.get_colormap(cmap if cmap else value_col, vmin, vmax, value_col=value_col)
 
         # Force the map canvas to stretch into Web Mercator
         fig, ax = plt.subplots(

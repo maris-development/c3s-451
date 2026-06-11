@@ -285,8 +285,8 @@ class Utils:
         if cmap == 'anomaly' and value_col in ["tp"]:
             gdf = gdf.copy()
             gdf[value_col] = gdf[value_col].clip(lower=-0.5, upper=None)
-            selected_gdf_anomoly = selected_gdf_anomoly.copy()
-            selected_gdf_anomoly[value_col] = selected_gdf_anomoly[value_col].clip(lower=-0.5, upper=None)
+            selected_gdf_anomaly = selected_gdf_anomaly.copy()
+            selected_gdf_anomaly[value_col] = selected_gdf_anomaly[value_col].clip(lower=-0.5, upper=None)
 
         vmin = gdf[value_col].min()
         vmax = gdf[value_col].max()

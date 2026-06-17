@@ -2222,12 +2222,15 @@ class Plot:
             return fig, axs_flat, None
         
     @staticmethod
-    def plot_two_figures( file_left, file_right, add_logos=True, title_fig1=None, title_fig2=None, title=None):
+    def plot_two_figures( file_left, file_right, add_logos=True, title_fig1=None, title_fig2=None, title=None, orientation='horizontal'):
         """
         Plots two figures side-by-side with an optional logo footer.
         """
         # Create a figure with only 1 row for the data plots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7), facecolor='white')
+        if orientation == 'horizontal':
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7), facecolor='white')
+        else:
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 6), facecolor='white')
         axs_flat = [ax1, ax2]
 
         # Load and display main images

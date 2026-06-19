@@ -1159,6 +1159,110 @@ class Process:
         return results
     
     @staticmethod
+    def compute_enso_index(
+        sst_dict: dict[str, xr.Dataset],
+        clim_range: tuple[str, str] = ("1991-01-01", "2020-12-31"),
+        year_range: tuple[int, int] = (1880, 2100),
+        target_month: int = 1,        # 1=Jan … 12=Dec
+        rolling_window: int = 3,      # months averaged
+        center: bool = True,          # centered vs trailing window
+        nino_year_shift: int = 0,     # shift Niño year to match event year
+        obs_std: float | None = None,                 # observed Niño std to match; None = no rescale
+        rescale_range: tuple[int, int] = (1950, 2020) # year window used to measure model variance
+    ) -> dict[str, pd.DataFrame]:
+        """
+        Computes the DJF Niño3.4 ENSO index for each model in the dictionary.
+        Uses a relative index: Niño3.4 anomaly minus broad tropical (20°S–20°N) anomaly.
+
+        Parameters:
+        - sst_dict: Dictionary {model_name: xr.Dataset} — must contain 'tos' variable
+        - clim_range: (start, end) date strings for the climatology baseline
+        - year_range: (start_year, end_year) for subsetting the output
+        """
+        results: dict[str, pd.DataFrame] = {}
+
+        for model_name, ds in sst_dict.items():
+            Utils.print(f"Calculating ENSO index for: {model_name}")
+            try:
+                tos = ds['tos']
+                spatial_dims = tuple(d for d in tos.dims if d != 'time')
+
+                # --- Region masks ---
+                nino_mask = (
+                    (ds.lat >= -5)  & (ds.lat <= 5) &
+                    (ds.lon >= -170) & (ds.lon <= -120)
+                )
+                tropics_mask = (
+                    (ds.lat >= -20) & (ds.lat <= 20)
+                )
+
+                # --- Cosine-latitude weights ---
+                weights_nino    = np.cos(np.deg2rad(ds.lat)).where(nino_mask, 0)
+                weights_tropics = np.cos(np.deg2rad(ds.lat)).where(tropics_mask, 0)
+
+                # --- Weighted spatial means ---
+                nino_ts    = tos.weighted(weights_nino).mean(spatial_dims).sortby("time")
+                tropics_ts = tos.weighted(weights_tropics).mean(spatial_dims).sortby("time")
+
+                # --- Climatology and anomalies ---
+                nino_clim    = nino_ts.sel(time=slice(*clim_range)).groupby("time.month").mean()
+                nino_anom    = nino_ts.groupby("time.month") - nino_clim
+
+                tropics_clim = tropics_ts.sel(time=slice(*clim_range)).groupby("time.month").mean()
+                tropics_anom = tropics_ts.groupby("time.month") - tropics_clim
+
+                # --- Detrend: remove broad tropical warming signal ---
+                sst_rel = nino_anom - tropics_anom
+
+                # --- Rolling window + month selection (matches Trend Analysis) ---
+                if rolling_window > 1:
+                    sst_roll = sst_rel.rolling(time=rolling_window, center=center, min_periods=1).mean()
+                else:
+                    sst_roll = sst_rel
+
+                enso_sel = sst_roll.sel(time=sst_roll.time.dt.month == target_month)
+
+                # Assign year as coordinate so to_dataframe gives 'year' directly (mirrors GMST)
+                enso_annual = (
+                    enso_sel
+                    .assign_coords(year=("time", enso_sel.time.dt.year.values))
+                    .swap_dims({"time": "year"})
+                    .drop_vars("time")
+                    .compute()
+                )
+
+                # Convert to DataFrame and Clean
+                df_yearly = enso_annual.to_dataframe(name='nino').reset_index()
+                df_yearly = df_yearly[['year', 'nino']].dropna(subset=['nino'])
+
+                # --- Rescale model variance to match observations ---
+                if obs_std is not None:
+                    ref = df_yearly[(df_yearly['year'] >= rescale_range[0]) &
+                                    (df_yearly['year'] <= rescale_range[1])]
+                    model_std = ref['nino'].std()
+                    if model_std and model_std > 0:
+                        df_yearly['nino'] = df_yearly['nino'] * (obs_std / model_std)
+                    else:
+                        Utils.print(f"WARNING: model std is 0/NaN for {model_name}; skipping rescale")
+
+                df_yearly['year'] = df_yearly['year'] + nino_year_shift   # apply shift here
+
+                # Subset to Study Period
+                df_subset = Utils.subset_gdf(
+                    gdf=cast(gpd.GeoDataFrame, df_yearly),
+                    datetime_col="year",
+                    date_range=(year_range[0], year_range[1])
+                ).copy()
+
+                results[model_name] = df_subset
+                Utils.print(f"SUCCESS: ENSO index computed for {model_name} ({len(df_subset)} years)")
+
+            except Exception as e:
+                Utils.print(f"ERROR: Failed to compute ENSO index for {model_name}: {e}")
+
+        return results
+        
+    @staticmethod
     def compute_gmst_anomalies(gmst_dict: dict[str, xr.Dataset|xr.DataTree], event_year: int, year_range: tuple = (1950, 2100), window: int = 4) -> dict[str, gpd.GeoDataFrame]:
         """
         Computes yearly GMST rolling anomalies relative to a specific event year.
@@ -1214,7 +1318,7 @@ class Process:
                     ref_val = df_subset.loc[df_subset["year"] == event_year, "gmst"].values[0]  # pyright: ignore[reportAttributeAccessIssue]
                     df_subset["gmst"] = df_subset["gmst"] - ref_val
                     results[model_name] = df_subset
-                    Utils.print(f"SUCCES: GMST anomaly calculated (Ref {event_year}: {ref_val:.2f}°C)")
+                    Utils.print(f"SUCCESS: GMST anomaly calculated (Ref {event_year}: {ref_val:.2f}°C)")
                 except IndexError:
                     Utils.print(f"WARNING: Event year {event_year} not found in model {model_name} range.")
                     continue
@@ -1376,6 +1480,170 @@ class Process:
                 return(res_df)
             }
             return(NULL)
+        }
+            """
+        r(r_code)
+
+
+    @staticmethod
+    def analyze_extreme_scenario_2nd_cov():
+        r_code = """
+        analyze_extreme_scenario_2nd_cov <- function(model_name, rp, model_df, gmst_df, enso_df, 
+                                            y_start, y_end, y_now, nsamp,dGMST_target, nino_hist, nino_fut, 
+                                            scenario_label, dist, type, lower, save_dir, second_cov) {
+            
+            cat(paste0("   Scenario [", scenario_label, "]: Years ", y_start, "-", y_end, "\n"))
+            
+            # 1. Subset and Merge
+            m_sub <- model_df[model_df$year >= y_start & model_df$year <= y_end, ]
+            g_sub <- gmst_df[gmst_df$year >= y_start & gmst_df$year <= y_end, ]
+            df <- merge_model_gmst(m_sub, g_sub)
+
+            cat(sprintf("      [DBG] m_sub=%d rows (%d-%d), g_sub=%d rows (%d-%d), merged=%d rows (%d-%d)\n",
+                nrow(m_sub), min(m_sub$year), max(m_sub$year),
+                nrow(g_sub), min(g_sub$year), max(g_sub$year),
+                nrow(df),    min(df$year),    max(df$year)))
+            
+            if (second_cov) {
+                e_sub <- enso_df[enso_df$year >= y_start & enso_df$year <= y_end, ]
+                df <- merge(df, e_sub, by = "year")
+                cat(sprintf("      [DBG] enso_sub=%d rows (%d-%d), after enso merge=%d rows (%d-%d) | nino NA: %d\n",
+                nrow(e_sub), min(e_sub$year), max(e_sub$year),
+                nrow(df),    min(df$year),    max(df$year),
+                sum(is.na(df$nino))))
+            }
+
+            covnm <- if (second_cov) c("gmst", "nino") else "gmst"
+            cat(sprintf("      [DBG] covnm=%s | df cols: %s\n",
+                paste(covnm, collapse="+"), paste(names(df), collapse=", ")))
+            
+            if (nrow(df) < 20) {
+                cat(sprintf("      [DBG] SKIP: only %d rows after merge (< 20)\n", nrow(df)))
+                return(NULL)
+            }
+
+            # 2. Fit Model
+            cat(sprintf("      [DBG] Fitting: dist=%s, type=%s, lower=%s\n", dist, type, lower))
+            mdl <- tryCatch({
+                # Try first with the default optimization method
+                fit_ns(dist = dist, type = type, data = df, 
+                    varnm = "value", covnm = covnm, lower = lower)
+            }, error = function(e) {
+                # If default fails, try again using Nelder-Mead
+                message(paste("WARNING: Default fit failed for", model_name, "- trying Nelder-Mead..."))
+                cat(sprintf("      [DBG] Default fit error: %s\n", e$message))
+                tryCatch({
+                    fit_ns(dist = dist, type = type, data = df, 
+                        varnm = "value", covnm = covnm, lower = lower, 
+                        method = "Nelder-Mead")
+                }, error = function(e2) {
+                    cat(sprintf("      [DBG] Nelder-Mead fit error: %s\n", e2$message))
+                    return(NULL) # If both fail, return NULL
+                })
+            })
+
+            if (is.null(mdl)) {
+                cat("      [DBG] SKIP: model fit returned NULL\n")
+                return(NULL)
+            }
+            cat("      [DBG] Fit OK\n")
+
+            # 3. Define Covariates (CRITICAL FIX: drop=F keeps it as a DataFrame)
+            # This prevents the "incorrect number of dimensions" error
+
+            if (second_cov) {
+                cov_now <- df[df$year == y_now, c("gmst", "nino"), drop = F]
+                cat(sprintf("      [DBG] cov_now rows for y_now=%d: %d\n", y_now, nrow(cov_now)))
+                
+                if (nrow(cov_now) == 0) {
+                    cat("      [DBG] cov_now fallback: using tail of df\n")
+                    cov_now <- data.frame(gmst = tail(df$gmst, 1),
+                                        nino = tail(df$nino, 1))
+                }
+
+                if (is.na(nino_fut)) {
+                    nino_fut <- cov_now$nino
+                    cat(sprintf("      [DBG] nino_fut was NA, set to factual nino=%.3f\n", nino_fut))
+                }
+
+                cov_hist <- data.frame(gmst = cov_now$gmst - 1.3,         nino = nino_hist)
+                cov_fut  <- data.frame(gmst = cov_now$gmst + dGMST_target, nino = nino_fut)
+
+                cat(sprintf("      [DBG] cov_now:  gmst=%.3f nino=%.3f\n", cov_now$gmst,  cov_now$nino))
+                cat(sprintf("      [DBG] cov_hist: gmst=%.3f nino=%.3f\n", cov_hist$gmst, cov_hist$nino))
+                cat(sprintf("      [DBG] cov_fut:  gmst=%.3f nino=%.3f\n", cov_fut$gmst,  cov_fut$nino))
+            } else {
+                cov_now <- df[df$year == y_now, "gmst", drop = F]
+                cat(sprintf("      [DBG] cov_now rows for y_now=%d: %d\n", y_now, nrow(cov_now)))
+                
+                if (nrow(cov_now) == 0) {
+                    cat("      [DBG] cov_now fallback: using tail of df\n")
+                    val <- tail(df$gmst, 1)
+                    cov_now <- data.frame(gmst = val)
+                }
+                
+                # Math on dataframes preserves the dataframe structure in R
+                cov_hist <- cov_now - 1.3
+                cov_fut  <- cov_now + dGMST_target
+                cat(sprintf("      [DBG] cov_now=%.3f | cov_hist=%.3f | cov_fut=%.3f\n",
+                cov_now$gmst, cov_hist$gmst, cov_fut$gmst))
+            }
+
+            # 4. Extract Results
+            cat("      [DBG] Running cmodel_results...\n")
+            res <- tryCatch({
+                cmodel_results(mdl, rp = rp, 
+                            cov_f = cov_now, 
+                            cov_hist = cov_hist, 
+                            cov_fut = cov_fut, 
+                            y_now = y_now, y_start = y_start, y_fut = y_end, nsamp = nsamp)
+            }, error = function(e) {
+                cat(sprintf("      [DBG] ERROR cmodel_results: %s\n", e$message))
+                return(NULL)
+            })
+
+            if (is.null(res)) {
+                cat("      [DBG] SKIP: cmodel_results returned NULL\n")
+                return(NULL)
+            }
+
+            res_flat <- unlist(res)
+            key_cols <- intersect(c("rp_value", "PR_est", "dI_abs_est"), names(res_flat))
+            if (length(key_cols) > 0) {
+                vals <- sapply(key_cols, function(col) sprintf("%s=%.3f", col, res_flat[[col]]))
+                cat(sprintf("      [DBG] Results: %s\n", paste(vals, collapse=" | ")))
+            } else {
+                cat(sprintf("      [DBG] Results OK (%d fields)\n", length(res_flat)))
+            }
+
+            res_df <- as.data.frame(res_flat)
+            res_df$scenario <- scenario_label
+            res_df$model <- model_name
+                
+            # 5. Plotting
+            tryCatch({
+                # Define a subfolder specifically for plots
+                plot_subdir <- file.path(save_dir, "modelfits")
+                
+                # Create the directory if it doesn't exist 
+                if (!dir.exists(plot_subdir)) {
+                    dir.create(plot_subdir, recursive = TRUE, showWarnings = FALSE)
+                }
+                fname <- file.path(plot_subdir, paste0(model_name, "_", scenario_label, ".png"))
+                val_to_plot <- unlist(res)[,"rp_value"]
+                
+                # Use 'cov_hist' (cov_cf) exactly like your original loop
+                png(fname, width = 480, height = 360)
+                plot_returnlevels(mdl, cov_f = cov_now, cov_cf = cov_hist, 
+                                ev = val_to_plot, nsamp = 100, main = paste(model_name, scenario_label))
+                dev.off()
+                cat(sprintf("      [DBG] Plot saved: %s\n", fname))
+            }, error = function(e) {
+                cat(sprintf("      [DBG] Plot failed: %s\n", e$message))
+                if (dev.cur() > 1) dev.off()
+            })
+            
+            return(res_df)
         }
             """
         r(r_code)

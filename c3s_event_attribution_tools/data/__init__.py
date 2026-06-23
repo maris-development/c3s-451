@@ -1059,7 +1059,7 @@ class DataClient():
             variable, model, bbox, time_range, experiment, temporal_resolution
         )
         
-    def fetch_cordex_xr(self, variable: str, model_url: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime]) -> xr.Dataset:
+    def fetch_cordex_xr(self, variable: str, model_url: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime], temp_res: str = "daily") -> xr.Dataset:
         """Fetch CORDEX data as an xarray Dataset.
 
         Parameters:
@@ -1068,6 +1068,7 @@ class DataClient():
             bbox (tuple[float, float, float, float]):
                 Bounding box as (min_lon, min_lat, max_lon, max_lat).
             time_range (tuple[datetime, datetime]): (start, end) datetime range.
+            temp_res (str): Temporal resolution (e.g. "daily", "monthly").
 
         Returns:
             xr.Dataset: CORDEX data for the requested selection.
@@ -1079,7 +1080,8 @@ class DataClient():
             variable=variable,
             model_url=model_url,
             bbox=bbox,
-            time_range=time_range
+            time_range=time_range,
+            temp_res=temp_res
         )
     
     @deprecated("Use fetch_cordex_xr instead")
@@ -1260,7 +1262,8 @@ class DataClient():
         temp_res="daily",
         max_models=None,
         study_region=None,
-    ) -> tuple[dict[str, xr.Dataset|xr.DataTree], dict[str, xr.Dataset|xr.DataTree]]:
+        second_cov=False
+    ) -> tuple[dict, dict] | tuple[dict, dict, dict]:
         """
         Unified fetcher for CMIP6 and CORDEX data.
         
@@ -1269,10 +1272,13 @@ class DataClient():
         - models: 
             If 'cmip6': List of model names (strings).
             If 'cordex': List of dictionaries containing {'hist_url', 'rcp85_url', 'driving_model'}.
+        - second_cov: bool, optional
+            Whether to include the second covariate (ENSO nino3.4). Default is False.
         """
         
         results_local: dict[str, xr.Dataset|xr.DataTree] = {}
         results_gmst: dict[str, xr.Dataset|xr.DataTree] = {}
+        results_sst: dict[str, xr.Dataset|xr.DataTree] = {}
         processed_count = 0
 
         # Defaults to surpress 'unbound variable' warnings
@@ -1280,7 +1286,7 @@ class DataClient():
         rcp_periods = []
         ensemble = 'UnknownMember'
         gmst_merged = None
-        
+        sst_merged = None
         exp_hist = "historical"
 
         # Configuration based on Analysis Type
@@ -1302,7 +1308,9 @@ class DataClient():
                 break
 
             model_id = None
-            driving_model = None       
+            driving_model = None  
+            gmst_merged = None
+            sst_merged = None     
             if analysis_type == 'cmip6':
                 model_id = entry 
                 driving_model = entry
@@ -1359,10 +1367,10 @@ class DataClient():
                 else:
                     # CORDEX Local Fetch (via URL)
                     ds_hist = self.fetch_cordex_xr(
-                        variable=variable_name, model_url=entry["hist_url"], bbox=bbox, time_range=hist_range
+                        variable=variable_name, model_url=entry["hist_url"], bbox=bbox, time_range=hist_range, temp_res=temp_res
                     )
                     ds_fut = self.fetch_cordex_xr(
-                        variable=variable_name, model_url=entry["rcp85_url"], bbox=bbox, time_range=fut_range
+                        variable=variable_name, model_url=entry["rcp85_url"], bbox=bbox, time_range=fut_range, temp_res=temp_res
                     )
 
                 # Merge Local
@@ -1385,6 +1393,22 @@ class DataClient():
                         )
                         
                         gmst_merged = xr.concat([gmst_hist_cmip6, gmst_fut_cmip6], dim="time", combine_attrs="override", data_vars=XR_CONCAT_DATA_VARS)
+
+                        if second_cov == True:
+
+                            Utils.print(f"   -> Fetching SST for {driving_model}...")
+
+                            sst_hist_cmip6 = self.fetch_cmip6_xr(
+                            variable=Variable.CMIP6.sea_surface_temperature, model=driving_model, bbox=(-180, -20, 180, 20),
+                            time_range=hist_range, experiment="historical", temporal_resolution="monthly"
+                            )
+
+                            sst_fut_cmip6 = self.fetch_cmip6_xr(
+                            variable=Variable.CMIP6.sea_surface_temperature, model=driving_model, bbox=(-180, -20, 180, 20),
+                            time_range=fut_range, experiment=exp_fut, temporal_resolution="monthly"
+                            )
+
+                            sst_merged = xr.concat([sst_hist_cmip6, sst_fut_cmip6], dim="time", combine_attrs="override", data_vars=XR_CONCAT_DATA_VARS)
                     
                     if analysis_type == 'cordex':
                         Utils.print(f"   -> Fetching GMST for {driving_model} (CMIP5)...")
@@ -1420,16 +1444,60 @@ class DataClient():
                         gmst_fut_cordex = gmst_fut_cordex.sel(time=slice(fut_range[0], fut_range[1]))
                         
                         gmst_merged = xr.concat([gmst_hist_cordex, gmst_fut_cordex], dim="time", combine_attrs="override", data_vars=XR_CONCAT_DATA_VARS)
+
+                        if second_cov == True:
+
+                            Utils.print(f"   -> Fetching SST for {driving_model} (CMIP5)...")
+
+                            sst_hist_cordex_datasets: List[xr.Dataset] = []
+                            for period in hist_periods:
+                                Utils.print(f"      - Historical Period: {period}")
+                                chunk = self.fetch_cmip5_monthly_single_levels_xr(
+                                    experiment="historical", variable=Variable.CMIP5Monthly.sea_surface_temperature,
+                                    model=driving_model, ensemble_member=ensemble, period=period
+                                )
+                                sst_hist_cordex_datasets.append(chunk)
+                                
+                            sst_hist_cordex = xr.concat(sst_hist_cordex_datasets, dim="time", data_vars=XR_CONCAT_DATA_VARS)
+                            sst_hist_cordex = sst_hist_cordex.convert_calendar("standard", use_cftime=False)
+                            sst_hist_cordex = sst_hist_cordex.interpolate_na(dim="time", method="linear")
+                            # subset to hist_range
+                            sst_hist_cordex = sst_hist_cordex.sel(time=slice(hist_range[0], hist_range[1]))
+                            
+                            sst_fut_cordex_datasets: List[xr.Dataset] = []
+                            for period in rcp_periods:
+                                Utils.print(f"      - RCP8.5 Period: {period}")
+                                chunk = self.fetch_cmip5_monthly_single_levels_xr(
+                                    experiment="rcp_8_5", variable=Variable.CMIP5Monthly.sea_surface_temperature,
+                                    model=driving_model, ensemble_member=ensemble, period=period
+                                )
+                                sst_fut_cordex_datasets.append(chunk)
+                                
+                            sst_fut_cordex = xr.concat(sst_fut_cordex_datasets, dim="time", data_vars=XR_CONCAT_DATA_VARS)
+                            sst_fut_cordex = sst_fut_cordex.convert_calendar("standard", use_cftime=False)
+                            sst_fut_cordex = sst_fut_cordex.interpolate_na(dim="time", method="linear")
+                            # subset to fut_range
+                            sst_fut_cordex = sst_fut_cordex.sel(time=slice(fut_range[0], fut_range[1]))
+                            
+                            sst_merged = xr.concat([sst_hist_cordex, sst_fut_cordex], dim="time", combine_attrs="override", data_vars=XR_CONCAT_DATA_VARS)
+                        
                 else:
                     Utils.print(f"   ⚠️ Skipping GMST: No driving model provided.")
                     gmst_merged = None
+                
+                if second_cov and sst_merged is None:
+                    Utils.print(f"   ⚠️ Skipping {model_id}: SST data could not be retrieved.")
+                    continue
 
                 # Store Results 
                 results_local[model_id] = local_merged
                 
                 if gmst_merged is not None:
                     results_gmst[model_id] = gmst_merged
-                
+                    
+                if sst_merged is not None:
+                    results_sst[model_id] = sst_merged
+
                 processed_count += 1
                 Utils.print(f"   ✅ Success: {model_id}")
 
@@ -1439,4 +1507,7 @@ class DataClient():
 
         Utils.print(f"\n--- Completed {analysis_type.upper()} Processing: {processed_count} models processed ---")
 
-        return results_local, results_gmst
+        if second_cov == True:
+            return results_local, results_gmst, results_sst
+        else:
+            return results_local, results_gmst

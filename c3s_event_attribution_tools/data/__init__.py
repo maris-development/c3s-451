@@ -1059,7 +1059,7 @@ class DataClient():
             variable, model, bbox, time_range, experiment, temporal_resolution
         )
         
-    def fetch_cordex_xr(self, variable: str, model_url: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime]) -> xr.Dataset:
+    def fetch_cordex_xr(self, variable: str, model_url: str, bbox: tuple[float, float, float, float], time_range: tuple[datetime, datetime], temp_res: str = "daily") -> xr.Dataset:
         """Fetch CORDEX data as an xarray Dataset.
 
         Parameters:
@@ -1068,6 +1068,7 @@ class DataClient():
             bbox (tuple[float, float, float, float]):
                 Bounding box as (min_lon, min_lat, max_lon, max_lat).
             time_range (tuple[datetime, datetime]): (start, end) datetime range.
+            temp_res (str): Temporal resolution (e.g. "daily", "monthly").
 
         Returns:
             xr.Dataset: CORDEX data for the requested selection.
@@ -1079,7 +1080,8 @@ class DataClient():
             variable=variable,
             model_url=model_url,
             bbox=bbox,
-            time_range=time_range
+            time_range=time_range,
+            temp_res=temp_res
         )
     
     @deprecated("Use fetch_cordex_xr instead")
@@ -1365,10 +1367,10 @@ class DataClient():
                 else:
                     # CORDEX Local Fetch (via URL)
                     ds_hist = self.fetch_cordex_xr(
-                        variable=variable_name, model_url=entry["hist_url"], bbox=bbox, time_range=hist_range
+                        variable=variable_name, model_url=entry["hist_url"], bbox=bbox, time_range=hist_range, temp_res=temp_res
                     )
                     ds_fut = self.fetch_cordex_xr(
-                        variable=variable_name, model_url=entry["rcp85_url"], bbox=bbox, time_range=fut_range
+                        variable=variable_name, model_url=entry["rcp85_url"], bbox=bbox, time_range=fut_range, temp_res=temp_res
                     )
 
                 # Merge Local

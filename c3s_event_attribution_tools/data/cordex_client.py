@@ -15,6 +15,7 @@ class CordexClient:
         model_url: str,
         bbox: tuple[float, float, float, float],
         time_range: tuple[datetime, datetime],
+        temp_res: str = "daily"
     ) -> xr.Dataset:
         """
         Fetch CORDEX data as an xarray Dataset for a given variable, model, bounding box, and time range.
@@ -24,6 +25,7 @@ class CordexClient:
             model_url (str): The model URL segment to access the specific dataset. (eg. eur11-hist-day-cccma_canesm2-clmcom_clm_cclm4_8_17-r1i1p1)
             bbox (tuple): A tuple defining the bounding box (min_lon, min_lat, max_lon, max_lat).
             time_range (tuple): A tuple defining the time range (start_time, end_time).
+            temp_res (str): Temporal resolution (e.g. "daily", "monthly").
         """
         headers = {
             "Authorization": f"Bearer {self.cordex_token}",
@@ -38,6 +40,12 @@ class CordexClient:
         )
         
         out_ds = bbox_filtered_ds.to_dataset()
+        # CORDEX Zarr stores are daily. Resample to monthly only when requested.
+        if temp_res == "monthly":
+            out_ds = self._resample_to_monthly(out_ds, variable)
+        elif temp_res != "daily":
+            raise ValueError(f"temp_res must be 'daily' or 'monthly', got '{temp_res}'")
+
         return out_ds
     
     def fetch_cordex_gpd(
@@ -75,3 +83,23 @@ class CordexClient:
             "eur11-hist-day-cccma_canesm2-clmcom_clm_cclm4_8_17-r1i1p1",
             # Add more models as needed
         ]
+    
+    @staticmethod
+    def _resample_to_monthly(ds: xr.Dataset, variable: str) -> xr.Dataset:
+        """
+        Aggregate a daily CORDEX dataset to monthly, choosing the operator per variable
+        so the result matches the CMIP6 native-monthly product.
+        """
+        # "MS" = month-start timestamps, consistent with CMIP6 monthly outputs
+        resampler = ds.resample(time="MS")
+
+        if variable in ("tas", "tasmin", "tasmax"):
+            # CMIP6 monthly tas/tasmax/tasmin = time-mean of the daily values
+            return resampler.mean()
+        elif variable == "pr":
+            # pr is a flux (kg m-2 s-1); monthly MEAN keeps the rate convention
+            # (downstream multiplies by 86400 -> mm/day). Use .sum() only if you
+            # switch the whole pipeline to monthly accumulations.
+            return resampler.mean()
+        else:
+            return resampler.mean()

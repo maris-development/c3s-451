@@ -1489,7 +1489,7 @@ class Process:
     def analyze_extreme_scenario_2nd_cov():
         r_code = """
         analyze_extreme_scenario_2nd_cov <- function(model_name, rp, model_df, gmst_df, enso_df, 
-                                            y_start, y_end, y_now, nsamp,dGMST_target, nino_hist, nino_fut, 
+                                            y_start, y_end, y_now, nsamp,dGMST_hist, dGMST_fut, nino_hist, nino_fut, 
                                             scenario_label, dist, type, lower, save_dir, second_cov) {
             
             cat(paste0("   Scenario [", scenario_label, "]: Years ", y_start, "-", y_end, "\n"))
@@ -1566,8 +1566,13 @@ class Process:
                     cat(sprintf("      [DBG] nino_fut was NA, set to factual nino=%.3f\n", nino_fut))
                 }
 
-                cov_hist <- data.frame(gmst = cov_now$gmst - 1.3,         nino = nino_hist)
-                cov_fut  <- data.frame(gmst = cov_now$gmst + dGMST_target, nino = nino_fut)
+                if (is.na(nino_hist)) {
+                    nino_hist <- cov_now$nino
+                    cat(sprintf("      [DBG] nino_hist was NA, set to factual nino=%.3f\n", nino_hist))
+                }
+
+                cov_hist <- data.frame(gmst = cov_now$gmst - dGMST_hist,         nino = nino_hist)
+                cov_fut  <- data.frame(gmst = cov_now$gmst + dGMST_fut, nino = nino_fut)
 
                 cat(sprintf("      [DBG] cov_now:  gmst=%.3f nino=%.3f\n", cov_now$gmst,  cov_now$nino))
                 cat(sprintf("      [DBG] cov_hist: gmst=%.3f nino=%.3f\n", cov_hist$gmst, cov_hist$nino))
@@ -1583,8 +1588,8 @@ class Process:
                 }
                 
                 # Math on dataframes preserves the dataframe structure in R
-                cov_hist <- cov_now - 1.3
-                cov_fut  <- cov_now + dGMST_target
+                cov_hist <- cov_now - dGMST_hist
+                cov_fut  <- cov_now + dGMST_fut
                 cat(sprintf("      [DBG] cov_now=%.3f | cov_hist=%.3f | cov_fut=%.3f\n",
                 cov_now$gmst, cov_hist$gmst, cov_fut$gmst))
             }

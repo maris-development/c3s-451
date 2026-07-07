@@ -976,7 +976,7 @@ class Utils:
         return "Bad", summary   
 
     @staticmethod
-    def extract_results(parameter:str, df: pd.DataFrame, df_res: pd.DataFrame, df_obs: pd.DataFrame, dist: str, conf: str):
+    def extract_results(parameter:str, df: pd.DataFrame, df_res: pd.DataFrame, df_obs: pd.DataFrame, dist: str, conf: str, second_cov = False):
         """ 
         Compare model validation results with observations and update the DataFrame.
         df: DataFrame to update (model hub)
@@ -1079,6 +1079,12 @@ class Utils:
                 model_threshold = r['rp_value']
                 df.loc[mask, 'Magnitude (Obs / Validation)'] = f"{obs_event_magnitude:.2f} / {model_threshold:.2f}"
                 df.loc[mask, 'RP (Obs / Validation)'] = f"{obs_return_period:.1f} / {obs_return_period:.1f}"
+
+                if second_cov:
+                    df.loc[mask, 'Nino_corr'] = (
+                        f"{r['nino_corr_est']:.2f} ({r['nino_corr_lower']:.2f}, {r['nino_corr_upper']:.2f})"
+                        if 'nino_corr_est' in r and pd.notna(r['nino_corr_est']) else "N/A"
+                    )
                 
 
             # B. Past Analysis (using 'attr_' columns)
@@ -1119,11 +1125,42 @@ class Utils:
                     df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-rel')
                 else:
                     df.loc[mask, 'Fut_2.6_dI'] = fmt(r, 'proj', 'dI-abs') 
+
+            if second_cov:
+                # Pi scenario
+                pi_row = m_rows[m_rows['scenario'] == 'Pi']
+                if not pi_row.empty:
+                    r = pi_row.iloc[0]
+                    df.loc[mask, 'Pi_PR'] = fmt(r, 'attr', 'PR')
+                    if parameter == 'Precipitation':
+                        df.loc[mask, 'Pi_dI'] = fmt(r, 'attr', 'dI-rel')
+                    else:
+                        df.loc[mask, 'Pi_dI'] = fmt(r, 'attr', 'dI-abs')
+                
+                # Neut scenario
+                neut_row = m_rows[m_rows['scenario'] == 'Neut']
+                if not neut_row.empty:
+                    r = neut_row.iloc[0]
+                    df.loc[mask, 'Neut_PR'] = fmt(r, 'attr', 'PR')
+                    if parameter == 'Precipitation':
+                        df.loc[mask, 'Neut_dI'] = fmt(r, 'attr', 'dI-rel')
+                    else:
+                        df.loc[mask, 'Neut_dI'] = fmt(r, 'attr', 'dI-abs')
+
+                # Pineut scenario
+                pineut_row = m_rows[m_rows['scenario'] == 'Pineut']
+                if not pineut_row.empty:
+                    r = pineut_row.iloc[0]
+                    df.loc[mask, 'Pineut_PR'] = fmt(r, 'attr', 'PR')
+                    if parameter == 'Precipitation':
+                        df.loc[mask, 'Pineut_dI'] = fmt(r, 'attr', 'dI-rel')
+                    else:
+                        df.loc[mask, 'Pineut_dI'] = fmt(r, 'attr', 'dI-abs')
         
         return active_params
 
     @staticmethod
-    def create_decision_hub(df_validation, step='full', project_filter='all', save_path=None, active_params=None):
+    def create_decision_hub(df_validation, step='full', project_filter='all', save_path=None, active_params=None, second_cov=False):
         """
         Creates an interactive, scrollable table for Model Validation.
         """
@@ -1144,9 +1181,9 @@ class Utils:
         
         # Calculate Total Width based on step to prevent "squishing"
         if step == 'full':
-            total_width = '1650px'
+            total_width = '1780px' if second_cov else '1650px'
         elif step == 'statistics':
-            total_width = '1300px'
+            total_width = '1430px' if second_cov else '1300px'
         else:
             total_width = '820px'
 
@@ -1160,10 +1197,26 @@ class Utils:
                 widgets.HTML(f'<b>Seasonal</b>', layout={'width': w_val}), 
                 widgets.HTML(f'<b>Spatial</b>', layout={'width': w_val}),
                 widgets.HTML(f'<b>Stat Fit</b>', layout={'width': w_val}), 
-                widgets.HTML(f'<b>Mag (Obs/Val)</b>', layout={'width': w_res}),
-                widgets.HTML(f'<b>Past PR/dI</b>', layout={'width': w_res}), 
-                widgets.HTML(f'<b>Fut 2.0 PR/dI</b>', layout={'width': w_res}), 
-                widgets.HTML(f'<b>Fut 2.6 PR/dI</b>', layout={'width': w_res}), 
+                widgets.HTML(f'<b>Mag (Obs/Val)</b>', layout={'width': w_res})
+            ]
+            
+            if second_cov:
+                header_list += [
+                    widgets.HTML(f'<b>Nino Corr</b>', layout={'width': '130px'}),
+                    widgets.HTML(f'<b>Pi Attr PR/dI</b>', layout={'width': w_res}), 
+                    widgets.HTML(f'<b>Neut Attr PR/dI</b>', layout={'width': w_res}), 
+                    widgets.HTML(f'<b>Pineut Attr PR/dI</b>', layout={'width': w_res})
+                ]
+            else:
+                # These only get added if second_cov is False
+                header_list += [
+                    widgets.HTML(f'<b>Past PR/dI</b>', layout={'width': w_res}), 
+                    widgets.HTML(f'<b>Fut 2.0 PR/dI</b>', layout={'width': w_res}), 
+                    widgets.HTML(f'<b>Fut 2.6 PR/dI</b>', layout={'width': w_res})
+                ]
+                
+            # These always get added at the end
+            header_list += [
                 widgets.HTML(f'<b>Include?</b>', layout={'width': w_drop}), 
                 widgets.HTML(f'<b>Comments</b>', layout={'width': w_obs})
             ]
@@ -1180,7 +1233,11 @@ class Utils:
             ]
             header_list += [
                 widgets.HTML(f'<b>Summary</b>', layout={'width': '300px'}), 
-                widgets.HTML(f'<b>Mag (Obs/Val)</b>', layout={'width': w_res}),
+                widgets.HTML(f'<b>Mag (Obs/Val)</b>', layout={'width': w_res})
+            ]
+            if second_cov:
+                header_list += [widgets.HTML(f'<b>Nino Corr</b>', layout={'width': '130px'})]
+            header_list += [
                 widgets.HTML(f'<b>Include?</b>', layout={'width': w_drop}), 
                 widgets.HTML(f'<b>Comments</b>', layout={'width': w_obs})
             ]
@@ -1227,9 +1284,12 @@ class Utils:
                     color = 'green' if val == 'Good' else 'orange' if val == 'Reasonable' else 'red'
                     line_items.append(widgets.HTML(f"<div><b style='color:{color}'>{val}</b></div>", layout={'width': '80px'}))
                 
-                line_items.append(widgets.HTML(f"<div style='padding-left:8px; line-height:14px; display:flex; align_items:center; height:32px;'><small>{row.get('validation_summary', '')}</small></div>", layout={'width': '300px'}))
+                line_items.append(widgets.HTML(f"<div style='padding-left:8px; line-height:14px; display:flex; align-items:center; height:32px;'><small>{row.get('validation_summary', '')}</small></div>", layout={'width': '300px'}))
                 line_items.append(widgets.HTML(f"<div><small>{row.get('Magnitude (Obs / Validation)', 'N/A')}</small></div>", layout={'width': w_res}))
+                if second_cov:
+                    line_items.append(widgets.HTML(f"<div><small>{row.get('Nino_corr', 'N/A')}</small></div>", layout={'width': '130px'}))
                 line_items.extend([inc_drop, obs_text])
+
 
             elif step == 'visual':
                 line_items.extend([inc_drop, obs_text])
@@ -1241,10 +1301,15 @@ class Utils:
                     line_items.append(widgets.HTML(f"<div><b style='color:{color}'>{val}</b></div>", layout={'width': w_val}))
                 
                 line_items.append(widgets.HTML(f"<div><small>{row.get('Magnitude (Obs / Validation)', 'N/A')}</small></div>", layout={'width': w_res}))
-                
-                for prefix in ['Past', 'Fut_2.0', 'Fut_2.6']:
-                    val_str = f"PR: {row.get(f'{prefix}_PR', 'N/A')}<br>dI: {row.get(f'{prefix}_dI', 'N/A')}"
-                    line_items.append(widgets.HTML(f"<div style='padding-left:8px; line-height:14px; display:flex; align_items:center; height:32px;'><small>{val_str}</small></div>", layout={'width': w_res}))
+                if second_cov:
+                    line_items.append(widgets.HTML(f"<div><small>{row.get('Nino_corr', 'N/A')}</small></div>", layout={'width': '130px'}))
+                    for prefix in ['Pi', 'Neut', 'Pineut']:
+                        val_str = f"PR: {row.get(f'{prefix}_PR', 'N/A')}<br>dI: {row.get(f'{prefix}_dI', 'N/A')}"
+                        line_items.append(widgets.HTML(f"<div style='padding-left:8px; line-height:14px; display:flex; align-items:center; height:32px;'><small>{val_str}</small></div>", layout={'width': w_res}))
+                else:
+                    for prefix in ['Past', 'Fut_2.0', 'Fut_2.6']:
+                        val_str = f"PR: {row.get(f'{prefix}_PR', 'N/A')}<br>dI: {row.get(f'{prefix}_dI', 'N/A')}"
+                        line_items.append(widgets.HTML(f"<div style='padding-left:8px; line-height:14px; display:flex; align-items:center; height:32px;'><small>{val_str}</small></div>", layout={'width': w_res}))
                 
                 line_items.extend([inc_drop, obs_text])
 

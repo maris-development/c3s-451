@@ -1490,7 +1490,7 @@ class Process:
         r_code = """
         analyze_extreme_scenario_2nd_cov <- function(model_name, rp, model_df, gmst_df, enso_df, 
                                             y_start, y_end, y_now, nsamp,dGMST_hist, dGMST_fut, nino_hist, nino_fut, 
-                                            scenario_label, dist, type, lower, save_dir, second_cov) {
+                                            scenario_label, dist, type, lower, save_dir, second_cov, nino_obs_now) {
             
             cat(paste0("   Scenario [", scenario_label, "]: Years ", y_start, "-", y_end, "\n"))
             
@@ -1516,6 +1516,14 @@ class Process:
             covnm <- if (second_cov) c("gmst", "nino") else "gmst"
             cat(sprintf("      [DBG] covnm=%s | df cols: %s\n",
                 paste(covnm, collapse="+"), paste(names(df), collapse=", ")))
+            
+            nino_corr <- c(NA, NA, NA)
+            if (second_cov) {
+                nino_corr <- c(cor(df$nino, df$value),
+                            quantile(sapply(1:nsamp, function(i)
+                                cor(df[sample(1:nrow(df), replace = T), c("nino", "value")])[1,2]),
+                                c(0.025, 0.975), na.rm = T))
+            }
             
             if (nrow(df) < 20) {
                 cat(sprintf("      [DBG] SKIP: only %d rows after merge (< 20)\n", nrow(df)))
@@ -1560,15 +1568,18 @@ class Process:
                     cov_now <- data.frame(gmst = tail(df$gmst, 1),
                                         nino = tail(df$nino, 1))
                 }
-
+                
+                # Evaluate at the observed current Niño, not the model's own
+                cov_now$nino <- nino_obs_now
+                cat(sprintf("      [DBG] cov_now values for y_now=%d: gmst=%.3f nino=%.3f\n", y_now, cov_now$gmst, cov_now$nino))
                 if (is.na(nino_fut)) {
-                    nino_fut <- cov_now$nino
-                    cat(sprintf("      [DBG] nino_fut was NA, set to factual nino=%.3f\n", nino_fut))
+                    nino_fut <- nino_obs_now
+                    cat(sprintf("      [DBG] nino_fut was NA, set to observed nino=%.3f\n", nino_fut))
                 }
 
                 if (is.na(nino_hist)) {
-                    nino_hist <- cov_now$nino
-                    cat(sprintf("      [DBG] nino_hist was NA, set to factual nino=%.3f\n", nino_hist))
+                    nino_hist <- nino_obs_now
+                    cat(sprintf("      [DBG] nino_hist was NA, set to observed nino=%.3f\n", nino_hist))
                 }
 
                 cov_hist <- data.frame(gmst = cov_now$gmst - dGMST_hist,         nino = nino_hist)
@@ -1624,6 +1635,9 @@ class Process:
             res_df <- as.data.frame(res_flat)
             res_df$scenario <- scenario_label
             res_df$model <- model_name
+            res_df$nino_corr_est   <- nino_corr[1]
+            res_df$nino_corr_lower <- nino_corr[2]
+            res_df$nino_corr_upper <- nino_corr[3]
                 
             # 5. Plotting
             tryCatch({

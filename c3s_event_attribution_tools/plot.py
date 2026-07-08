@@ -64,7 +64,8 @@ ANOMALY_COLORS = ["#693f18", "#B1967E", "#D2C7BE", "#ffffff", "#A6B4CB", "#7888A
 temperature_cmap = ListedColormap(TEMPERATURE_COLORS, name="temperature_cmap")
 temperature_positive_cmap = ListedColormap(TEMPERATURE_COLORS[5:], name="temperature_positive_cmap")
 temperature_negative_cmap = ListedColormap(TEMPERATURE_COLORS[:6], name="temperature_negative_cmap")
-precipitation_cmap = LinearSegmentedColormap.from_list("precipitation_cmap", PRECIPITATION_COLORS, N=len(PRECIPITATION_COLORS))
+#precipitation_cmap = LinearSegmentedColormap.from_list("precipitation_cmap", PRECIPITATION_COLORS, N=len(PRECIPITATION_COLORS))
+precipitation_cmap = plt.get_cmap("YlGnBu")
 anomaly_cmap = ListedColormap(ANOMALY_COLORS, name="anomaly_cmap")
 anomaly_cmap = LinearSegmentedColormap.from_list("anomaly_cmap", ANOMALY_COLORS, N=256)
 anomaly_positive_cmap = ListedColormap(ANOMALY_COLORS[1:], name="anomaly_positive_cmap")
@@ -155,18 +156,20 @@ class Plot:
             data (numpy.ndarray):
                 An array of precipitation bin boundaries.
         '''
-        if vmax <= 15:
-            return np.array([0, 1, 2, 3, 4, 6, 7, 8, 10])
-        elif vmax <= 40:
-            return np.array([0, 1, 2, 4, 6, 8, 10, 15, 20])
-        elif vmax <= 75:
-            return np.array([0, 5, 10, 15, 20, 25, 30, 40, 50])
-        elif vmax <= 150:
-            return np.array([0, 5, 10, 20, 30, 40, 60, 80, 100])
-        elif vmax <= 300:
-            return np.array([0, 25, 50, 75, 100, 125, 150, 175, 200])
-        else:
-            return np.array([0, 50, 100, 150, 200, 250, 300, 350, 400])
+        # (Remove if there is no errors with the new bins)
+        # if vmax <= 15:
+        #     return np.array([0, 1, 2, 3, 4, 6, 7, 8, 10])
+        # elif vmax <= 40:
+        #     return np.array([0, 1, 2, 4, 6, 8, 10, 15, 20])
+        # elif vmax <= 75:
+        #     return np.array([0, 5, 10, 15, 20, 25, 30, 40, 50])
+        # elif vmax <= 150:
+        #     return np.array([0, 5, 10, 20, 30, 40, 60, 80, 100])
+        # elif vmax <= 300:
+        #     return np.array([0, 25, 50, 75, 100, 125, 150, 175, 200])
+        # else:
+        #     return np.array([0, 50, 100, 150, 200, 250, 300, 350, 400])
+        return np.array([0, 2, 5, 10, 25, 50, 100, 250, 300])
 
 
     # get colormap
@@ -200,7 +203,7 @@ class Plot:
             case 'tp':
                 boundaries = Plot.precip_bins(vmax)
                 cmap = precipitation_cmap
-                norm = BoundaryNorm(boundaries, len(boundaries) - 1)
+                norm = BoundaryNorm(boundaries=boundaries, ncolors=256)
                 return cmap, norm
             case 'anomaly' | 'sst':
                 if value_col in ["t2m", "sst"]:
@@ -771,7 +774,9 @@ class Plot:
             cbar = fig.colorbar(
                 sm, ax=axes.tolist(), 
                 orientation='horizontal', location="top",
-                fraction=0.01, pad=.07, aspect=60, ticks=ticks)
+                fraction=0.01, pad=.07, aspect=60, ticks=ticks,
+                extend="max" if value_col == "tp" else "neither"
+                )
             
             if cmap.name == "anomaly_cmap" and value_col in ["tp"]:
                 cbar.ax.set_xlim(-0.5, None)

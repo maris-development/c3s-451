@@ -95,6 +95,7 @@ pylint-output.txt
 
 
 !notebook_templates/00_BASE_DATA/*.nc
+!notebook_templates/Second Covariate/00_BASE_DATA/*.nc
 ecmwf.ipynb
 mars.ipynb
 test.ipynb

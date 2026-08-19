@@ -282,6 +282,7 @@ class Variable:
         temperature_2m_mean = 1 # 2 meter temperature mean
         total_precipitation = 2 # total precipitation
         sea_surface_temperature = 3 # sea surface temperature
+        mean_sea_level_pressure = 4 # mean sea level pressure
         
         def cds_name(self) -> str:
             """
@@ -294,6 +295,7 @@ class Variable:
                 Variable.ERA5MonthlySingleLevel.temperature_2m_mean: '2m_temperature',
                 Variable.ERA5MonthlySingleLevel.total_precipitation: 'total_precipitation',
                 Variable.ERA5MonthlySingleLevel.sea_surface_temperature: 'sea_surface_temperature',
+                Variable.ERA5MonthlySingleLevel.mean_sea_level_pressure: 'mean_sea_level_pressure',
 
             }
             return translation_dict[self]
@@ -309,6 +311,7 @@ class Variable:
                 Variable.ERA5MonthlySingleLevel.temperature_2m_mean: {'t2m': 't2m'},
                 Variable.ERA5MonthlySingleLevel.total_precipitation: {'tp': 'tp'},
                 Variable.ERA5MonthlySingleLevel.sea_surface_temperature: {'sst': 'sst'},
+                Variable.ERA5MonthlySingleLevel.mean_sea_level_pressure: {'msl': 'msl'},
             }
 
             return translation_dict[self]
@@ -324,6 +327,7 @@ class Variable:
                 Variable.ERA5MonthlySingleLevel.temperature_2m_mean: 't2m',
                 Variable.ERA5MonthlySingleLevel.total_precipitation: 'tp',
                 Variable.ERA5MonthlySingleLevel.sea_surface_temperature: 'sst',
+                Variable.ERA5MonthlySingleLevel.mean_sea_level_pressure: 'msl',
             }
             return translation_dict[self]
         

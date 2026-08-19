@@ -4,6 +4,7 @@ import geopandas as gpd
 import pandas as pd
 import contextily as ctx
 import math
+import calendar
 import cartopy 
 from shapely.geometry import shape, Polygon, mapping, MultiPolygon, GeometryCollection
 import cartopy.crs as ccrs
@@ -1194,7 +1195,7 @@ class Plot:
     def plot_n_days(
         rolled_data_list:list[gpd.GeoDataFrame], value_col:str, parameter:str, event_date:datetime,
         labelticks:list[int], labels:list[any], days:list[int], title:str,
-        datetime_col:str="valid_time", add_logos:bool=True, fig_height:int=3, xtick_rotation:int=0, ncols:int=0
+        datetime_col:str="valid_time", add_logos:bool=True, fig_height:int=3, xtick_rotation:int=0, ncols:int=0, daily:bool=True
     ):
         '''
         Plots multiple time series showing rolling data accumulations over different day windows.
@@ -1300,7 +1301,10 @@ class Plot:
             ax.set_xticks(labelticks)
             ax.set_xticklabels(labels, rotation=xtick_rotation)
             ax.grid(axis="x", color="k", alpha=0.2) # set vertical grid lines
-            ax.set_title(f"{ndays}-day {title}", fontsize=18)
+            if daily == True:
+                ax.set_title(f"{ndays}-day {title}", fontsize=18)
+            else:
+                ax.set_title(f"{ndays}-month {title}", fontsize=18)
 
             # Highlight date window
             ylim = ax.get_ylim()
@@ -1801,7 +1805,8 @@ class Plot:
             add_logos:bool=True,
             projection:cartopy.crs=ccrs.PlateCarree(), #unused?
             dpi:int=100, #unused?
-            subtitle:bool=True
+            subtitle:bool=True,
+            daily:bool=True,
         ):
         
         '''
@@ -1844,17 +1849,22 @@ class Plot:
             ax.plot(obs_seasonal_cycle[value_col].values, color="k", label="ERA5")
 
             ax.set_title(model_name.replace("_", "-"), weight="medium", fontsize=16)
-            ax.set_xticks(ticks)
-            ax.set_xticklabels(labels)
+
+            # Monthly x-axis: one tick per month, labelled by month abbreviation
+            if daily == True:
+                # Daily (day-of-year): 12 month labels at the 15th of each month
+                ax.set_xticks(ticks)
+                ax.set_xticklabels(labels)
+            elif daily == False:
+                months = [int(m) for m in np.atleast_1d(da["month"].values)]
+                ax.set_xticks(range(len(months)))
+                ax.set_xticklabels([calendar.month_abbr[m] for m in months])
+
             if i % ncols == 0:
                 ax.set_ylabel(legend_title)
 
             ax.grid(alpha=0.1)
 
-            for d in range(365):
-                if days[d].day == 1:
-                    ax.axvline(d, color="k", alpha=0.05)
-            
             ax.legend()
 
         for j in range(i + 1, len(axs.flatten())):

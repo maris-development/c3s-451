@@ -1053,7 +1053,7 @@ class Utils:
                     df.loc[mask, 'sigma_validation'] = status
 
                 # Conditionally validate Shape
-                if "shape" in active_params:
+                if "shape" in active_params and obs_shape is not None:
                     status, summ = Utils.get_validation_details(r['eval_shape_est'], r['eval_shape_lower'], r['eval_shape_upper'], obs_shape, "Shape")
                     results['shape'] = (status, summ)
                     df.loc[mask, 'shape_validation'] = status

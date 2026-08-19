@@ -5,7 +5,7 @@ import pandas as pd
 import geopandas as gpd
 from typing import Tuple, Union, Literal, cast
 import numpy as np
-
+import dask
 from .data import conversions
 from .utils import Utils
 import rasterio
@@ -1157,6 +1157,193 @@ class Process:
         Utils.print(f"Processing complete. {len(results['processed'])} succeeded, {len(results['dropped'])} dropped.")
 
         return results
+
+    @staticmethod
+    def compute_climate_indices_monthly(
+                data_input: dict[str, xr.Dataset|xr.DataTree], 
+                parameter: str, 
+                study_region: gpd.GeoDataFrame, 
+                baseline_range: tuple = ("1991", "2020"), 
+                sc_month_range: None|tuple[int, int] = None, 
+                clim_month_range: None|tuple[int, int] = None
+            ):
+            """
+            Monthly-only processor for CMIP6 and CORDEX data.
+
+            Produces three products per model, mirroring the monthly Event Definition
+            workflow:
+              - seasonal_cycles: one value per month, latitude-weighted regional mean of
+                the monthly climatology, restricted to `sc_month_range` (cross-year aware).
+              - spatial_maps: gridded monthly climatology averaged over `clim_month_range`
+                (cross-year aware).
+              - time_series: latitude-weighted regional monthly time series (full period).
+
+            data_input: Can be a dict {name: ds} (CMIP6) or a list of dicts (CORDEX).
+            """
+            results = {
+                "seasonal_cycles": {},
+                "spatial_maps": {},
+                "time_series": {},
+                "processed": [],
+                "dropped": []
+            }
+    
+            # Normalize input to a common format: a list of (label, dataset, entry_metadata)
+            items_to_process = []
+            if isinstance(data_input, dict):
+                # Format for CMIP6
+                for name, ds in data_input.items():
+                    items_to_process.append((name, ds, name))
+            else:
+                # Format for CORDEX
+                for entry in data_input:
+                    label = f"{entry['gcm']}\n{entry['rcm']}"
+                    items_to_process.append((label, entry["experiment_data"], entry))
+    
+            for label, ds, original_entry in items_to_process:
+                Utils.print(f"Processing: {label}")
+                try:
+                    # Extract Variable & Unit Conversion
+                    da = ds[parameter]
+                    da = Utils.wrap_lon(da)
+    
+                    # Handle Dimensions & Coordinate Names
+                    # Rename CMIP6-style coords to standard names
+                    if "lat" in da.coords: da = da.rename({"lat": "latitude"})
+                    if "lon" in da.coords: da = da.rename({"lon": "longitude"})
+                    
+                    # Detect spatial dimensions for averaging (Native Grid Handling)
+                    if "rlon" in da.dims:
+                        xdim, ydim = ["rlon", "rlat"]
+                    elif "x" in da.dims:
+                        xdim, ydim = ["x", "y"]
+                    else:
+                        xdim, ydim = ["longitude", "latitude"]
+    
+                    da = da.sortby("time")
+    
+                    # Baseline monthly climatology (mean value per calendar month)
+                    clim_monthly = da.sel(time=slice(*baseline_range)).groupby("time.month").mean("time")
+                    # Ordered month windows (cross-year aware)
+                    if sc_month_range is None:
+                        sc_months = list(range(1, 13))
+                    elif sc_month_range[0] <= sc_month_range[1]:
+                        sc_months = list(range(sc_month_range[0], sc_month_range[1] + 1))
+                    else:
+                        sc_months = list(range(sc_month_range[0], 13)) + list(range(1, sc_month_range[1] + 1))
+                    if clim_month_range is None:
+                        clim_months = list(range(1, 13))
+                    elif clim_month_range[0] <= clim_month_range[1]:
+                        clim_months = list(range(clim_month_range[0], clim_month_range[1] + 1))
+                    else:
+                        clim_months = list(range(clim_month_range[0], 13)) + list(range(1, clim_month_range[1] + 1))
+                    # Spatial Masking
+                    mask = regionmask.mask_geopandas(study_region, da.longitude, da.latitude)
+                    if np.isnan(mask).all():
+                        Utils.print(f"Skipping {label}: Coarse grid detected. Polygon missed all center points.")
+                        results["dropped"].append(original_entry) 
+                        continue
+                    
+                    ts_regional = da.where(mask == 0, drop=True)
+    
+                    # Product B: Regional Time Series (Latitude Weighted)
+                    weights = Process.weighted_values(ts_regional, value_col=None, lat_col='latitude')
+
+                    ts_final = ts_regional.weighted(weights).mean([xdim, ydim]).sortby("time")
+    
+                    # Product C: Seasonal Cycle (one value per month over the study region)
+                    clim_region = clim_monthly.where(mask == 0, drop=True)
+                    weights_sc = Process.weighted_values(clim_region, value_col=None, lat_col='latitude')
+                    sc = clim_region.weighted(weights_sc).mean([xdim, ydim])
+                    sc = sc.sel(month=sc_months)
+
+                    # Product A: Spatial Climatology (monthly climatology averaged over clim_month_range)
+                    da_clim = clim_monthly.sel(month=clim_months).mean(dim="month")
+                    # Store Results
+
+                    sc_out, daclim_out, tsfinal_out = dask.compute(sc, da_clim, ts_final)
+    
+                    # Convert only now (small data)
+                    if parameter in ["tas", "tasmin", "tasmax"]:
+                        sc_out.values = conversions.Conversions.convert_temperature(sc_out.values, "k", "c")
+                        daclim_out.values = conversions.Conversions.convert_temperature(daclim_out.values, "k", "c")
+                        tsfinal_out.values = conversions.Conversions.convert_temperature(tsfinal_out.values, "k", "c")
+                    elif parameter == "pr":
+                        sc_out.values = sc_out.values * 86400
+                        daclim_out.values = daclim_out.values * 86400
+                        tsfinal_out.values = tsfinal_out.values * 86400
+                        
+    
+                    results["seasonal_cycles"][label] = sc_out
+                    results["spatial_maps"][label] = daclim_out
+                    results["time_series"][label] = tsfinal_out
+                    results["processed"].append(original_entry)
+                    
+                    Utils.print(f"{label} Processed successfully.")
+    
+                except Exception as exc:
+                    results["dropped"].append(original_entry)
+                    Utils.print(f"ERROR: {label} Failed: {exc}")
+                    continue
+    
+            Utils.print(f"Processing complete. {len(results['processed'])} succeeded, {len(results['dropped'])} dropped.")
+    
+            return results
+
+    @staticmethod
+    def annual_mean_over_months(da, month_range, value_col="value"):
+        """Annual mean over a month window.
+
+        Uses the xarray time accessor for month/year so it stays valid for
+        cftime calendars (noleap, 360_day) used by CMIP6/CORDEX.
+        """
+        # Detect time coordinate dynamically
+        time_coord = None
+        for candidate in ["time", "valid_time"]:
+            if candidate in da.coords or candidate in da.dims:
+                time_coord = candidate
+                break
+
+        if time_coord is None:
+            raise ValueError(
+                "DataArray must contain either 'time' or 'valid_time' coordinate."
+            )
+
+        da = da.sortby(time_coord)
+        df = da.to_dataframe(name=value_col).reset_index()
+        df["month"] = da[time_coord].dt.month.values
+        df["year"] = da[time_coord].dt.year.values
+
+        start_month, end_month = month_range
+
+        if start_month <= end_month:
+            month_mask = (df["month"] >= start_month) & (df["month"] <= end_month)
+            ts_subset = df.loc[month_mask].copy()
+        else:
+            month_mask = (df["month"] >= start_month) | (df["month"] <= end_month)
+            ts_subset = df.loc[month_mask].copy()
+            # Assign January..end_month to the previous season year
+            ts_subset.loc[ts_subset["month"] <= end_month, "year"] -= 1
+
+            # Keep only complete cross-year seasons
+            expected_months = (12 - start_month + 1) + end_month
+            counts = ts_subset.groupby("year")[value_col].count()
+            complete_years = counts[counts == expected_months].index
+            ts_subset = ts_subset[ts_subset["year"].isin(complete_years)]
+
+        ts_ann = (
+            ts_subset.groupby("year", as_index=False)[value_col].mean()
+            .sort_values("year")
+            .reset_index(drop=True)
+        )
+
+        return xr.DataArray(
+            ts_ann[value_col].values,
+            coords={"year": ts_ann["year"].values},
+            dims="year",
+            name=value_col,
+        )
+
     
     @staticmethod
     def compute_enso_index(

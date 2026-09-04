@@ -170,7 +170,18 @@ class Plot:
         #     return np.array([0, 25, 50, 75, 100, 125, 150, 175, 200])
         # else:
         #     return np.array([0, 50, 100, 150, 200, 250, 300, 350, 400])
-        return np.array([0, 2, 5, 10, 25, 50, 100, 250, 300])
+
+        if vmax <= 15:
+            return np.array([0, 1, 2, 3, 4, 6, 7, 8, 10])
+        elif vmax <= 40:
+            return np.array([0, 1, 2, 4, 6, 8, 10, 15, 20])
+        elif vmax <= 75:
+            return np.array([0, 1, 2, 5, 10, 15, 20, 30, 50])
+        elif vmax <= 150:
+            return np.array([0, 1, 2, 5, 10, 20, 40, 70, 100])
+        else:
+            return np.array([0, 2, 5, 10, 25, 50, 100, 250, 300])
+         
 
 
     # get colormap
@@ -1307,10 +1318,11 @@ class Plot:
                 ax.set_title(f"{ndays}-month {title}", fontsize=18)
 
             # Highlight date window
-            ylim = ax.get_ylim()
-            dayofyear = event_date.dayofyear
-            ax.add_patch(Rectangle((dayofyear, ylim[0]), -15, 10000, color="gold", alpha=0.3))
-            ax.set_ylim(ylim)
+            if daily == True:
+                ylim = ax.get_ylim()
+                dayofyear = event_date.dayofyear
+                ax.add_patch(Rectangle((dayofyear, ylim[0]), -15, 10000, color="gold", alpha=0.3))
+                ax.set_ylim(ylim)
 
 
         fig.subplots_adjust(hspace=0.4)

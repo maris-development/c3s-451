@@ -1245,6 +1245,12 @@ class Plot:
             ncols (int, optional):
                 The number of columns in the subplot grid. If 0, it defaults to
                 the total number of plots. Defaults to 0.
+            daily (bool, optional):
+                If True, the windows are days and the black line covers the event year
+                up to the event date. If False, the windows are months and the highlighted
+                line covers the 12 months that end on the event month. The event year part
+                is black, the previous year part is red, and a legend is added.
+                Defaults to True.
 
         Returns:
             data (tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, matplotlib.axes.Axes | None]):
@@ -1297,16 +1303,33 @@ class Plot:
                     alpha=0.3
                 )
 
-            # Plot event year only up to event_date in black
-            data_event = data_nday[
-                (data_nday[datetime_col].dt.year == event_year) &
-                (data_nday[datetime_col] <= event_date)
-            ]
-            ax.plot(
-                data_event[datetime_col].dt.dayofyear,
-                data_event[value_col],
-                color="k"
-            )
+            if daily == True:
+                # Plot event year only up to event_date in black
+                data_event = data_nday[
+                    (data_nday[datetime_col].dt.year == event_year) &
+                    (data_nday[datetime_col] <= event_date)
+                ]
+                ax.plot(
+                    data_event[datetime_col].dt.dayofyear,
+                    data_event[value_col],
+                    color="k"
+                )
+            else:
+                # Highlighted line covers the 12 months that end on the event month
+                event_month = event_date.to_period("M")
+                window_start = (event_month - 11).to_timestamp(how="start")
+                window_end = event_month.to_timestamp(how="end")
+                data_event = data_nday[
+                    (data_nday[datetime_col] >= window_start) &
+                    (data_nday[datetime_col] <= window_end)
+                ].sort_values(datetime_col)
+                # Split per calendar year, the day-of-year axis wraps between December and January
+                for year, data_year in data_event.groupby(data_event[datetime_col].dt.year):
+                    ax.plot(
+                        data_year[datetime_col].dt.dayofyear,
+                        data_year[value_col],
+                        color="k" if year == event_year else "tab:red"
+                    )
 
             # Style
             ax.set_xticks(labelticks)
@@ -1332,10 +1355,31 @@ class Plot:
         axs = axs[:nplots]
 
         if add_logos:
-            fig, img_ax = Plot.add_image_below(fig=fig, image_path=LOGO_HORIZON_PATH, pad_frac=0)
-            return fig, ax, img_ax
+            # Reserve room for the legend between the plots and the logos
+            fig, img_ax = Plot.add_image_below(
+                fig=fig, image_path=LOGO_HORIZON_PATH, pad_frac=0
+            )
         else:
-            return fig, ax, None
+            img_ax = None
+
+        if daily == False:
+            legend_handles = [
+                mlines.Line2D([], [], color="k", lw=2, label="Current year"),
+                mlines.Line2D([], [], color="tab:red", lw=2, label="Previous year"),
+                mlines.Line2D([], [], color="tab:blue", lw=2, alpha=0.3, label="Historical"),
+            ]
+            # Anchor below the tick labels of the bottom row
+            grid_bottom = min(a.get_position().y0 for a in axs)
+            fig.legend(
+                handles=legend_handles,
+                loc="upper center",
+                bbox_to_anchor=(0.5, max(grid_bottom - 0.05, 0.0)),
+                ncol=3,
+                frameon=False,
+                fontsize=12
+            )
+
+        return fig, ax, img_ax
 
 
 

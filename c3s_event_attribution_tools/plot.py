@@ -513,6 +513,7 @@ class Plot:
                     lambda p: box(p.x - cell_size/2, p.y - cell_size/2,
                                 p.x + cell_size/2, p.y + cell_size/2)
             )
+        ax.ignore_existing_data_limits = True
         gdfs_local.plot(
             ax=ax, column=value_col, cmap=cmap, norm=norm,
             legend=False, marker=marker
@@ -589,7 +590,7 @@ class Plot:
                     datetime_col:str='valid_time',
                     polygons:list[Polygon]=None,
                     ncols:int=5,
-                    figsize:tuple[int, int]=(20, 12),
+                    figsize:tuple[int, int]|None=None,
                     cmap:str=None,
                     borders:bool=True,
                     coastlines:bool=True,
@@ -625,7 +626,7 @@ class Plot:
             ncols (int, optional):
                 The number of columns in the subplot grid. Defaults to 5.
             figsize (tuple[int, int], optional):
-                Matplotlib figure size (width, height) in inches. Defaults to (20, 12).
+                Matplotlib figure size (width, height) in inches. By default, the height scales with the row count.
             cmap (str, optional):
                 The desired colormap type (e.g., "t2m", "tp", "anomaly") or a standard
                 Matplotlib colormap name. Defaults to None (inferred from `value_col`).
@@ -673,6 +674,8 @@ class Plot:
         unique_days = sorted(gdfs_local[datetime_col].dt.date.unique())
         n_plots = len(unique_days)
         nrows = math.ceil(n_plots / ncols)
+        if figsize is None:
+            figsize = (20, 4 * nrows)
 
         # Create subplots with Cartopy projection
         fig, axes = plt.subplots(
@@ -707,7 +710,8 @@ class Plot:
                     lambda p: box(p.x - cell_size/2, p.y - cell_size/2,
                                 p.x + cell_size/2, p.y + cell_size/2)
                 )
-            
+
+            ax.ignore_existing_data_limits = True
             day_gdf.plot(
                 ax=ax, column=value_col, cmap=cmap,
                 legend=False, vmin=vmin, vmax=vmax,
@@ -1539,6 +1543,7 @@ class Plot:
                     lambda p: box(p.x - cell_size/2, p.y - cell_size/2,
                                 p.x + cell_size/2, p.y + cell_size/2)
                 )
+                ax.ignore_existing_data_limits = True
                 day_gdf.plot(
                     ax=ax, column=value_col, cmap=cmap,
                     legend=False, vmin=vmin, vmax=vmax,
